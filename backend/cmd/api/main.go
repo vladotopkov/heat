@@ -116,6 +116,11 @@ func run(logger *slog.Logger) error {
 		heatSourceHandler.ListSoilTypes,
 	)
 
+	mux.HandleFunc(
+		"GET /api/v1/calculation-operations",
+		heatSourceHandler.ListCalculationOperations,
+	)
+
 	// 8. Создаём HTTP-сервер.
 	server := &http.Server{
 		Addr: ":" + cfg.Port,

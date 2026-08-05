@@ -26,6 +26,10 @@ type Repository interface {
 	ListSoilTypes(
 		ctx context.Context,
 	) ([]domain.SoilType, error)
+
+	ListCalculationOperations(
+		ctx context.Context,
+	) ([]domain.CalculationOperation, error)
 }
 
 type Service struct {
