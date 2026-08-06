@@ -11,10 +11,17 @@ import (
 	"syscall"
 	"time"
 
+	calculationpostgres "lostHeat/internal/calculation/adapters/postgres"
+	"lostHeat/internal/calculation/calculators"
+	calculationhttp "lostHeat/internal/calculation/delivery/http"
+	calculationservice "lostHeat/internal/calculation/service"
+
 	"lostHeat/internal/config"
+
 	heatsourcepostgres "lostHeat/internal/heatsource/adapters/postgres"
 	heatsourcehttp "lostHeat/internal/heatsource/delivery/http"
-	"lostHeat/internal/heatsource/service"
+	heatsourceservice "lostHeat/internal/heatsource/service"
+
 	"lostHeat/internal/platform/httpserver"
 	platformpostgres "lostHeat/internal/platform/postgres"
 )
@@ -41,7 +48,6 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	// 1. Загружаем конфигурацию.
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf(
@@ -50,7 +56,6 @@ func run(logger *slog.Logger) error {
 		)
 	}
 
-	// 2. Ограничиваем время подключения к PostgreSQL.
 	connectionContext, connectionCancel :=
 		context.WithTimeout(
 			context.Background(),
@@ -58,7 +63,6 @@ func run(logger *slog.Logger) error {
 		)
 	defer connectionCancel()
 
-	// 3. Создаём общий пул соединений с PostgreSQL.
 	db, err := platformpostgres.NewPool(
 		connectionContext,
 		cfg.DatabaseURL,
@@ -73,55 +77,67 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("connected to PostgreSQL")
 
-	// 4. Создаём PostgreSQL adapter модуля heatsource.
+	/*
+		Модуль heatsource
+	*/
+
 	heatSourceRepository :=
 		heatsourcepostgres.NewRepository(db)
 
-	// 5. Создаём service модуля heatsource.
 	heatSourceService :=
-		service.New(heatSourceRepository)
+		heatsourceservice.New(
+			heatSourceRepository,
+		)
 
-	// 6. Создаём HTTP handler модуля heatsource.
 	heatSourceHandler :=
 		heatsourcehttp.NewHandler(
 			heatSourceService,
 			logger,
 		)
 
-	// 7. Регистрируем маршруты.
+	/*
+		Модуль calculation
+	*/
+
+	calculationRepository :=
+		calculationpostgres.NewRepository(db)
+
+	calculatorCatalog :=
+		calculators.NewCalculatorCatalog()
+
+	calculatorCatalog.MustRegister(
+		"normative_section_heat_loss",
+		calculators.NewNormativeSectionHeatLossCalculator(),
+	)
+
+	calculationService :=
+		calculationservice.New(
+			calculationRepository,
+			calculatorCatalog,
+		)
+
+	calculationHandler :=
+		calculationhttp.NewHandler(
+			calculationService,
+			logger,
+		)
+
+	/*
+		HTTP-маршруты
+	*/
+
 	mux := http.NewServeMux()
 
-	mux.HandleFunc(
-		"GET /api/v1/boiler-houses",
-		heatSourceHandler.ListBoilerHouses,
+	registerHeatSourceRoutes(
+		mux,
+		heatSourceHandler,
 	)
 
-	mux.HandleFunc(
-		"GET /api/v1/network-types",
-		heatSourceHandler.ListNetworkTypes,
+	registerCalculationRoutes(
+		mux,
+		calculationHandler,
 	)
 
-	mux.HandleFunc(
-		"GET /api/v1/insulation-materials",
-		heatSourceHandler.ListInsulationMaterials,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/laying-methods",
-		heatSourceHandler.ListLayingMethods,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/soil-types",
-		heatSourceHandler.ListSoilTypes,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/calculation-operations",
-		heatSourceHandler.ListCalculationOperations,
-	)
-
-	// 8. Создаём HTTP-сервер.
 	server := &http.Server{
 		Addr: ":" + cfg.Port,
 
@@ -135,8 +151,6 @@ func run(logger *slog.Logger) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// 9. Создаём контекст, который завершится после Ctrl+C
-	// или SIGTERM от Docker.
 	shutdownContext, stop :=
 		signal.NotifyContext(
 			context.Background(),
@@ -147,7 +161,6 @@ func run(logger *slog.Logger) error {
 
 	serverErrors := make(chan error, 1)
 
-	// 10. Запускаем HTTP-сервер в отдельной goroutine.
 	go func() {
 		logger.Info(
 			"HTTP server started",
@@ -163,7 +176,6 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
-	// 11. Ждём либо ошибку сервера, либо сигнал остановки.
 	select {
 	case err := <-serverErrors:
 		return fmt.Errorf(
@@ -175,7 +187,6 @@ func run(logger *slog.Logger) error {
 		logger.Info("shutdown signal received")
 	}
 
-	// 12. Даём активным запросам до 10 секунд на завершение.
 	gracefulContext, gracefulCancel :=
 		context.WithTimeout(
 			context.Background(),
@@ -193,4 +204,49 @@ func run(logger *slog.Logger) error {
 	logger.Info("HTTP server stopped")
 
 	return nil
+}
+
+func registerHeatSourceRoutes(
+	mux *http.ServeMux,
+	handler *heatsourcehttp.Handler,
+) {
+	mux.HandleFunc(
+		"GET /api/v1/boiler-houses",
+		handler.ListBoilerHouses,
+	)
+
+	mux.HandleFunc(
+		"GET /api/v1/network-types",
+		handler.ListNetworkTypes,
+	)
+
+	mux.HandleFunc(
+		"GET /api/v1/insulation-materials",
+		handler.ListInsulationMaterials,
+	)
+
+	mux.HandleFunc(
+		"GET /api/v1/laying-methods",
+		handler.ListLayingMethods,
+	)
+
+	mux.HandleFunc(
+		"GET /api/v1/soil-types",
+		handler.ListSoilTypes,
+	)
+
+	mux.HandleFunc(
+		"GET /api/v1/calculation-operations",
+		handler.ListCalculationOperations,
+	)
+}
+
+func registerCalculationRoutes(
+	mux *http.ServeMux,
+	handler *calculationhttp.Handler,
+) {
+	mux.HandleFunc(
+		"POST /api/v1/calculations",
+		handler.Calculate,
+	)
 }

@@ -13,6 +13,7 @@ func (r *Repository) ListCalculationOperations(
 	const query = `
 		SELECT
 			id::TEXT,
+			code,
 			name
 		FROM calculation_operations
 		ORDER BY name
@@ -37,6 +38,7 @@ func (r *Repository) ListCalculationOperations(
 
 		if err := rows.Scan(
 			&calculationOperation.ID,
+			&calculationOperation.Code,
 			&calculationOperation.Name,
 		); err != nil {
 			return nil, fmt.Errorf(

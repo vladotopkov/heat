@@ -57,7 +57,7 @@ services:
       - /app/node_modules
       - /app/.next
     environment:
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
+      BACKEND_INTERNAL_URL: http://backend:8080
     depends_on:
       - backend
     restart: unless-stopped
