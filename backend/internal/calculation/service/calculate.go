@@ -95,7 +95,9 @@ func (s *Service) Calculate(
 		domain.CalculationInput{
 			LengthM: requestData.LengthM,
 
-			WaterTemperatureC: requestData.WaterTemperatureC,
+			SupplyWaterTemperatureC: requestData.SupplyWaterTemperatureC,
+
+			ReturnWaterTemperatureC: requestData.ReturnWaterTemperatureC,
 
 			SoilTemperatureC: requestData.SoilTemperatureC,
 

@@ -35,26 +35,49 @@ func (c *NormativeSectionHeatLossCalculator) Calculate(
 			)
 	}
 
-	deltaTemperature :=
-		input.WaterTemperatureC -
+	supplyDeltaTemperature :=
+		input.SupplyWaterTemperatureC -
 			input.SoilTemperatureC
 
-	if deltaTemperature <= 0 {
+	if supplyDeltaTemperature <= 0 {
 		return domain.CalculationResult{},
 			fmt.Errorf(
-				"water temperature must be greater than soil temperature",
+				"supply water temperature must be greater than soil temperature",
 			)
 	}
 
-	// Удельные тепловые потери, Вт/м.
+	returnDeltaTemperature :=
+		input.ReturnWaterTemperatureC -
+			input.SoilTemperatureC
+
+	if returnDeltaTemperature <= 0 {
+		return domain.CalculationResult{},
+			fmt.Errorf(
+				"return water temperature must be greater than soil temperature",
+			)
+	}
+
+	// Удельные тепловые потери подающего трубопровода, Вт/м.
+	supplyHeatFlowWPerM :=
+		supplyDeltaTemperature /
+			totalResistance
+
+	// Удельные тепловые потери обратного трубопровода, Вт/м.
+	returnHeatFlowWPerM :=
+		returnDeltaTemperature /
+			totalResistance
+
+	// Общие удельные потери двух труб, Вт/м.
 	heatFlowWPerM :=
-		deltaTemperature / totalResistance
+		supplyHeatFlowWPerM +
+			returnHeatFlowWPerM
 
-	// Мощность тепловых потерь всего участка, Вт.
+	// Общая мощность тепловых потерь участка, Вт.
 	heatLossPowerW :=
-		heatFlowWPerM * input.LengthM
+		heatFlowWPerM *
+			input.LengthM
 
-	// Энергия тепловых потерь за период:
+	// Потери тепловой энергии за период:
 	// Вт × ч / 1000 = кВт·ч.
 	energyKWh :=
 		heatLossPowerW *
@@ -74,9 +97,6 @@ func (c *NormativeSectionHeatLossCalculator) Calculate(
 
 		TotalResistanceMKPerW:
 			totalResistance,
-
-		DeltaTemperatureK:
-			deltaTemperature,
 
 		HeatFlowWPerM:
 			heatFlowWPerM,

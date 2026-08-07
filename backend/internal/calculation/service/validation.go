@@ -109,10 +109,18 @@ func validateCalculationRequestData(
 		)
 	}
 
-	if requestData.WaterTemperatureC <=
+	if requestData.SupplyWaterTemperatureC <=
 		requestData.SoilTemperatureC {
 		return fmt.Errorf(
-			"%w: waterTemperatureC must be greater than soilTemperatureC",
+			"%w: SupplyWaterTemperatureC must be greater than soilTemperatureC",
+			ErrInvalidInput,
+		)
+	}
+
+	if requestData.ReturnWaterTemperatureC <=
+		requestData.ReturnWaterTemperatureC {
+		return fmt.Errorf(
+			"%w: ReturnWaterTemperatureC must be greater than soilTemperatureC",
 			ErrInvalidInput,
 		)
 	}

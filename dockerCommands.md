@@ -6,6 +6,16 @@ docker compose up -d
 
 docker compose down
 
+
+# смотреть логи
+
+docker compose logs -f backend
+
+docker compose logs -f
+
+docker compose logs -f --tail=100 backend
+
+
 # ребилд
 
 docker compose up --build

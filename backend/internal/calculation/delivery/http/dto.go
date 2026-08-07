@@ -30,7 +30,9 @@ type calculateRequest struct {
 	BurialDepthM         *float64 `json:"burialDepthM"`
 	SupplyPipeDiameterMM float64  `json:"supplyPipeDiameterMm"`
 	ReturnPipeDiameterMM float64  `json:"returnPipeDiameterMm"`
-	WaterTemperatureC    float64  `json:"waterTemperatureC"`
+
+	SupplyWaterTemperatureC float64 `json:"supplyWaterTemperatureC"`
+	ReturnWaterTemperatureC float64 `json:"returnWaterTemperatureC"`
 
 	InsulationMaterialID string  `json:"insulationMaterialId"`
 	SoilTypeID           *string `json:"soilTypeId"`
@@ -92,7 +94,9 @@ func (request calculateRequest) toRequestData() (
 
 		ReturnPipeDiameterMM: request.ReturnPipeDiameterMM,
 
-		WaterTemperatureC: request.WaterTemperatureC,
+		SupplyWaterTemperatureC: request.SupplyWaterTemperatureC,
+
+		ReturnWaterTemperatureC: request.ReturnWaterTemperatureC,
 
 		InsulationMaterialID: request.InsulationMaterialID,
 

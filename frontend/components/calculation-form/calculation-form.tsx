@@ -3,6 +3,11 @@
 import type { CalculationFormOptions } from "@/types/heatsource";
 import { FieldHelp } from "./field-help";
 import { type FormEvent, useState } from "react";
+import {
+  isScenarioFieldVisible,
+  resolveCalculationScenario,
+} from "@/lib/calculation/scenarios";
+import type { CalculationScenarioField } from "@/lib/calculation/scenarios";
 
 interface CalculationFormProps {
   options: CalculationFormOptions;
@@ -93,6 +98,27 @@ export function CalculationForm({ options }: CalculationFormProps) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [selectedNetworkTypeId, setSelectedNetworkTypeId] = useState("");
+
+  const [selectedLayingMethodId, setSelectedLayingMethodId] = useState("");
+
+  const selectedNetworkType = options.networkTypes.find(
+    (networkType) => networkType.id === selectedNetworkTypeId,
+  );
+
+  const selectedLayingMethod = options.layingMethods.find(
+    (layingMethod) => layingMethod.id === selectedLayingMethodId,
+  );
+
+  const scenario = resolveCalculationScenario(
+    selectedNetworkType?.name ?? null,
+    selectedLayingMethod?.name ?? null,
+  );
+
+  function showField(field: CalculationScenarioField): boolean {
+    return isScenarioFieldVisible(scenario, field);
+  }
+
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> {
@@ -104,6 +130,22 @@ export function CalculationForm({ options }: CalculationFormProps) {
 
     try {
       const formData = new FormData(event.currentTarget);
+
+      if (!scenario.isSupported) {
+        throw new Error(
+          "Для выбранных типа сети и способа прокладки расчёт пока не поддерживается",
+        );
+      }
+
+      const supplyWaterTemperatureC = requiredNumber(
+        formData,
+        "supplyWaterTemperatureC",
+      );
+
+      const returnWaterTemperatureC = requiredNumber(
+        formData,
+        "returnWaterTemperatureC",
+      );
 
       const requestData = {
         name: requiredString(formData, "name"),
@@ -137,7 +179,8 @@ export function CalculationForm({ options }: CalculationFormProps) {
 
         returnPipeDiameterMm: requiredNumber(formData, "returnPipeDiameterMm"),
 
-        waterTemperatureC: requiredNumber(formData, "waterTemperatureC"),
+        waterTemperatureC:
+          (supplyWaterTemperatureC + returnWaterTemperatureC) / 2,
 
         insulationMaterialId: requiredString(formData, "insulationMaterialId"),
 
@@ -183,6 +226,8 @@ export function CalculationForm({ options }: CalculationFormProps) {
   function handleReset(): void {
     setResult(null);
     setErrorMessage(null);
+    setSelectedNetworkTypeId("");
+    setSelectedLayingMethodId("");
   }
 
   return (
@@ -293,32 +338,6 @@ export function CalculationForm({ options }: CalculationFormProps) {
                   />
                 </label>
 
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Расчётный период — от
-                  </span>
-
-                  <input
-                    required
-                    type="date"
-                    name="calculationPeriodFrom"
-                    className={inputClassName}
-                  />
-                </label>
-
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Расчётный период — до
-                  </span>
-
-                  <input
-                    required
-                    type="date"
-                    name="calculationPeriodTo"
-                    className={inputClassName}
-                  />
-                </label>
-
                 <div>
                   <span className="inline-flex items-center gap-1.5">
                     <label
@@ -350,11 +369,51 @@ export function CalculationForm({ options }: CalculationFormProps) {
 
             <div className="h-px bg-slate-100" />
 
-            {/* Конфигурация сети */}
+            {/* Расчётный период */}
             <fieldset>
               <legend className="flex items-center gap-3 text-lg font-semibold">
                 <span className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-sm text-sky-700">
                   2
+                </span>
+                Расчётный период
+              </legend>
+
+              <div className="mt-6 grid gap-5 md:grid-cols-2">
+                <label>
+                  <span className="text-sm font-medium text-slate-700">
+                    Дата начала
+                  </span>
+
+                  <input
+                    required
+                    type="date"
+                    name="calculationPeriodFrom"
+                    className={inputClassName}
+                  />
+                </label>
+
+                <label>
+                  <span className="text-sm font-medium text-slate-700">
+                    Дата окончания
+                  </span>
+
+                  <input
+                    required
+                    type="date"
+                    name="calculationPeriodTo"
+                    className={inputClassName}
+                  />
+                </label>
+              </div>
+            </fieldset>
+
+            <div className="h-px bg-slate-100" />
+
+            {/* Конфигурация сети */}
+            <fieldset>
+              <legend className="flex items-center gap-3 text-lg font-semibold">
+                <span className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-sm text-sky-700">
+                  3
                 </span>
                 Конфигурация сети
               </legend>
@@ -368,7 +427,11 @@ export function CalculationForm({ options }: CalculationFormProps) {
                   <select
                     required
                     name="networkTypeId"
-                    defaultValue=""
+                    value={selectedNetworkTypeId}
+                    onChange={(event) => {
+                      setSelectedNetworkTypeId(event.target.value);
+                      setErrorMessage(null);
+                    }}
                     className={selectClassName}
                   >
                     <option value="" disabled>
@@ -391,7 +454,11 @@ export function CalculationForm({ options }: CalculationFormProps) {
                   <select
                     required
                     name="layingMethodId"
-                    defaultValue=""
+                    value={selectedLayingMethodId}
+                    onChange={(event) => {
+                      setSelectedLayingMethodId(event.target.value);
+                      setErrorMessage(null);
+                    }}
                     className={selectClassName}
                   >
                     <option value="" disabled>
@@ -414,7 +481,7 @@ export function CalculationForm({ options }: CalculationFormProps) {
             <fieldset>
               <legend className="flex items-center gap-3 text-lg font-semibold">
                 <span className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-sm text-sky-700">
-                  3
+                  4
                 </span>
                 Параметры трубопровода
               </legend>
@@ -437,83 +504,146 @@ export function CalculationForm({ options }: CalculationFormProps) {
                   />
                 </label>
 
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Глубина заложения, м
-                  </span>
+                {showField("burialDepthM") && (
+                  <label>
+                    <span className="text-sm font-medium text-slate-700">
+                      Глубина заложения, м
+                    </span>
 
-                  <input
-                    type="number"
-                    name="burialDepthM"
-                    min="0"
-                    step="1"
-                    inputMode="numeric"
-                    placeholder="0"
-                    className={inputClassName}
-                  />
-                </label>
+                    <input
+                      required
+                      type="number"
+                      name="burialDepthM"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      className={inputClassName}
+                    />
+                  </label>
+                )}
 
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Диаметр подающей трубы, мм
-                  </span>
+                {showField("supplyPipeDiameterMm") && (
+                  <label>
+                    <span className="text-sm font-medium text-slate-700">
+                      Диаметр подающей трубы, мм
+                    </span>
 
-                  <input
-                    required
-                    type="number"
-                    name="supplyPipeDiameterMm"
-                    min="1"
-                    step="1"
-                    inputMode="numeric"
-                    placeholder="0"
-                    className={inputClassName}
-                  />
-                </label>
+                    <input
+                      required
+                      type="number"
+                      name="supplyPipeDiameterMm"
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      placeholder="0"
+                      className={inputClassName}
+                    />
+                  </label>
+                )}
 
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Диаметр обратной трубы, мм
-                  </span>
+                {showField("returnPipeDiameterMm") && (
+                  <label>
+                    <span className="text-sm font-medium text-slate-700">
+                      Диаметр обратной трубы, мм
+                    </span>
 
-                  <input
-                    required
-                    type="number"
-                    name="returnPipeDiameterMm"
-                    min="1"
-                    step="1"
-                    inputMode="numeric"
-                    placeholder="0"
-                    className={inputClassName}
-                  />
-                </label>
-
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Температура воды в трубе, °C
-                  </span>
-
-                  <input
-                    required
-                    type="number"
-                    name="waterTemperatureC"
-                    step="0.1"
-                    inputMode="decimal"
-                    placeholder="0,0"
-                    className={inputClassName}
-                  />
-                </label>
+                    <input
+                      required
+                      type="number"
+                      name="returnPipeDiameterMm"
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      placeholder="0"
+                      className={inputClassName}
+                    />
+                  </label>
+                )}
               </div>
             </fieldset>
 
+            {scenario.isSupported && (
+              <>
+                <div className="h-px bg-slate-100" />
+
+                {/* Температурный режим */}
+                <fieldset>
+                  <legend className="flex items-center gap-3 text-lg font-semibold">
+                    <span className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-sm text-sky-700">
+                      5
+                    </span>
+                    Температурный режим
+                  </legend>
+
+                  <div className="mt-6 grid gap-5 md:grid-cols-2">
+                    {showField("supplyWaterTemperatureC") && (
+                      <label>
+                        <span className="text-sm font-medium text-slate-700">
+                          Температура воды в подающем трубопроводе, °C
+                        </span>
+
+                        <input
+                          required
+                          type="number"
+                          name="supplyWaterTemperatureC"
+                          step="0.1"
+                          inputMode="decimal"
+                          placeholder="0,0"
+                          className={inputClassName}
+                        />
+                      </label>
+                    )}
+
+                    {showField("returnWaterTemperatureC") && (
+                      <label>
+                        <span className="text-sm font-medium text-slate-700">
+                          Температура воды в обратном трубопроводе, °C
+                        </span>
+
+                        <input
+                          required
+                          type="number"
+                          name="returnWaterTemperatureC"
+                          step="0.1"
+                          inputMode="decimal"
+                          placeholder="0,0"
+                          className={inputClassName}
+                        />
+                      </label>
+                    )}
+
+                    {showField("soilTemperatureC") && (
+                      <label>
+                        <span className="text-sm font-medium text-slate-700">
+                          Температура грунта, °C
+                        </span>
+
+                        <input
+                          required
+                          type="number"
+                          name="soilTemperatureC"
+                          step="0.1"
+                          inputMode="decimal"
+                          placeholder="0,0"
+                          className={inputClassName}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </fieldset>
+              </>
+            )}
+
             <div className="h-px bg-slate-100" />
 
-            {/* Материалы и грунт */}
+            {/* Изоляция и грунт */}
             <fieldset>
               <legend className="flex items-center gap-3 text-lg font-semibold">
                 <span className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-sm text-sky-700">
-                  4
+                  6
                 </span>
-                Материалы и грунт
+                Изоляция и грунт
               </legend>
 
               <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -543,41 +673,30 @@ export function CalculationForm({ options }: CalculationFormProps) {
                   </select>
                 </label>
 
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Тип грунта
-                  </span>
+                {showField("soilTypeId") && (
+                  <label>
+                    <span className="text-sm font-medium text-slate-700">
+                      Тип грунта
+                    </span>
 
-                  <select
-                    name="soilTypeId"
-                    defaultValue=""
-                    className={selectClassName}
-                  >
-                    <option value="">Не применяется</option>
-
-                    {options.soilTypes.map((soilType) => (
-                      <option key={soilType.id} value={soilType.id}>
-                        {soilType.name}
+                    <select
+                      required
+                      name="soilTypeId"
+                      defaultValue=""
+                      className={selectClassName}
+                    >
+                      <option value="" disabled>
+                        Выберите тип грунта
                       </option>
-                    ))}
-                  </select>
-                </label>
 
-                <label>
-                  <span className="text-sm font-medium text-slate-700">
-                    Температура грунта, °C
-                  </span>
-
-                  <input
-                    required
-                    type="number"
-                    name="soilTemperatureC"
-                    step="0.1"
-                    inputMode="decimal"
-                    placeholder="0,0"
-                    className={inputClassName}
-                  />
-                </label>
+                      {options.soilTypes.map((soilType) => (
+                        <option key={soilType.id} value={soilType.id}>
+                          {soilType.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
             </fieldset>
           </div>

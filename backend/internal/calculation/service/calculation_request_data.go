@@ -24,7 +24,9 @@ type CalculationRequestData struct {
 	BurialDepthM         *float64
 	SupplyPipeDiameterMM float64
 	ReturnPipeDiameterMM float64
-	WaterTemperatureC    float64
+
+	SupplyWaterTemperatureC float64
+	ReturnWaterTemperatureC float64
 
 	InsulationMaterialID string
 	SoilTypeID           *string

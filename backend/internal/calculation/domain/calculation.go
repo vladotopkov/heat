@@ -29,8 +29,9 @@ type CalculationReferences struct {
 type CalculationInput struct {
 	LengthM float64
 
-	WaterTemperatureC float64
-	SoilTemperatureC  float64
+	SupplyWaterTemperatureC float64
+	ReturnWaterTemperatureC float64
+	SoilTemperatureC        float64
 
 	PeriodStart time.Time
 	PeriodEnd   time.Time
