@@ -3,250 +3,226 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log/slog"
+	"log"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	calculationpostgres "lostHeat/internal/calculation/adapters/postgres"
-	"lostHeat/internal/calculation/calculators"
-	calculationhttp "lostHeat/internal/calculation/delivery/http"
-	calculationservice "lostHeat/internal/calculation/service"
+	"lostHeat/internal/platform/database"
+	platformhttp "lostHeat/internal/platform/http"
 
-	"lostHeat/internal/config"
-
-	heatsourcepostgres "lostHeat/internal/heatsource/adapters/postgres"
-	heatsourcehttp "lostHeat/internal/heatsource/delivery/http"
-	heatsourceservice "lostHeat/internal/heatsource/service"
-
-	"lostHeat/internal/platform/httpserver"
-	platformpostgres "lostHeat/internal/platform/postgres"
+	"lostHeat/internal/qh/application"
+	qhhttp "lostHeat/internal/qh/http"
+	qhpostgres "lostHeat/internal/qh/postgres"
 )
 
 func main() {
-	logger := slog.New(
-		slog.NewJSONHandler(
-			os.Stdout,
-			&slog.HandlerOptions{
-				Level: slog.LevelInfo,
-			},
-		),
-	)
 
-	if err := run(logger); err != nil {
-		logger.Error(
-			"application stopped with error",
-			"error",
-			err,
+	ctx :=
+		context.Background()
+
+	databaseURL :=
+		os.Getenv(
+			"DATABASE_URL",
 		)
 
-		os.Exit(1)
+	if databaseURL == "" {
+		log.Fatal(
+			"DATABASE_URL is required",
+		)
 	}
-}
 
-func run(logger *slog.Logger) error {
-	cfg, err := config.Load()
+	port :=
+		os.Getenv(
+			"PORT",
+		)
+
+	if port == "" {
+		port = "8080"
+	}
+
+	// =========================================================
+	// DATABASE
+	// =========================================================
+
+	pool, err :=
+		database.NewPostgresPool(
+			ctx,
+			databaseURL,
+		)
+
 	if err != nil {
-		return fmt.Errorf(
-			"load configuration: %w",
+		log.Fatalf(
+			"connect to database: %v",
 			err,
 		)
 	}
 
-	connectionContext, connectionCancel :=
-		context.WithTimeout(
-			context.Background(),
-			10*time.Second,
-		)
-	defer connectionCancel()
+	defer pool.Close()
 
-	db, err := platformpostgres.NewPool(
-		connectionContext,
-		cfg.DatabaseURL,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"connect to PostgreSQL: %w",
-			err,
-		)
-	}
-	defer db.Close()
+	// =========================================================
+	// REPOSITORIES
+	// =========================================================
 
-	logger.Info("connected to PostgreSQL")
-
-	/*
-		Модуль heatsource
-	*/
-
-	heatSourceRepository :=
-		heatsourcepostgres.NewRepository(db)
-
-	heatSourceService :=
-		heatsourceservice.New(
-			heatSourceRepository,
+	sessionRepository :=
+		qhpostgres.NewSessionRepository(
+			pool,
 		)
 
-	heatSourceHandler :=
-		heatsourcehttp.NewHandler(
-			heatSourceService,
-			logger,
+	answerRepository :=
+		qhpostgres.NewAnswerRepository(
+			pool,
 		)
 
-	/*
-		Модуль calculation
-	*/
-
-	calculationRepository :=
-		calculationpostgres.NewRepository(db)
-
-	calculatorCatalog :=
-		calculators.NewCalculatorCatalog()
-
-	calculatorCatalog.MustRegister(
-		"normative_section_heat_loss",
-		calculators.NewNormativeSectionHeatLossCalculator(),
-	)
-
-	calculationService :=
-		calculationservice.New(
-			calculationRepository,
-			calculatorCatalog,
+	questionRepository :=
+		qhpostgres.NewQuestionRepository(
+			pool,
 		)
 
-	calculationHandler :=
-		calculationhttp.NewHandler(
-			calculationService,
-			logger,
+	selectionRuleRepository :=
+		qhpostgres.NewSelectionRuleRepository(
+			pool,
 		)
 
-	/*
-		HTTP-маршруты
-	*/
-
-	mux := http.NewServeMux()
-
-	registerHeatSourceRoutes(
-		mux,
-		heatSourceHandler,
-	)
-
-	registerCalculationRoutes(
-		mux,
-		calculationHandler,
-	)
-
-	server := &http.Server{
-		Addr: ":" + cfg.Port,
-
-		Handler: httpserver.CORS(
-			cfg.AllowOrigin,
-		)(mux),
-
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
-	shutdownContext, stop :=
-		signal.NotifyContext(
-			context.Background(),
-			os.Interrupt,
-			syscall.SIGTERM,
-		)
-	defer stop()
-
-	serverErrors := make(chan error, 1)
-
-	go func() {
-		logger.Info(
-			"HTTP server started",
-			"address",
-			server.Addr,
+	qhTableRepository :=
+		qhpostgres.NewQHTableRepository(
+			pool,
 		)
 
-		err := server.ListenAndServe()
+	tableDimensionRepository :=
+		qhpostgres.NewTableDimensionRepository(
+			pool,
+		)
 
-		if err != nil &&
-			!errors.Is(err, http.ErrServerClosed) {
-			serverErrors <- err
+	rowRepository :=
+		qhpostgres.NewRowRepository(
+			pool,
+		)
+
+	temperatureRegimeRepository :=
+		qhpostgres.NewTemperatureRegimeRepository(
+			pool,
+		)
+
+	qhValueRepository :=
+		qhpostgres.NewQHValueRepository(
+			pool,
+		)
+
+	qhResultRepository :=
+		qhpostgres.NewQHResultRepository(
+			pool,
+		)
+
+	// =========================================================
+	// TABLE SELECTION
+	// =========================================================
+
+	tableSelectionResolver :=
+		application.NewTableSelectionResolver(
+			sessionRepository,
+			answerRepository,
+			selectionRuleRepository,
+			questionRepository,
+			qhTableRepository,
+		)
+
+	// =========================================================
+	// ROW SELECTION
+	// =========================================================
+
+	rowSelectionResolver :=
+		application.NewRowSelectionResolver(
+			sessionRepository,
+			answerRepository,
+			questionRepository,
+			tableDimensionRepository,
+			rowRepository,
+		)
+
+	// =========================================================
+	// QH
+	// =========================================================
+
+	qhResolver :=
+		application.NewQHResolver(
+			sessionRepository,
+			answerRepository,
+			questionRepository,
+			temperatureRegimeRepository,
+			qhValueRepository,
+			qhResultRepository,
+		)
+
+	// =========================================================
+	// ОБЩИЙ QUESTIONNAIRE RESOLVER
+	// =========================================================
+
+	questionnaireResolver :=
+		application.NewQuestionnaireResolver(
+			sessionRepository,
+			qhTableRepository,
+			tableSelectionResolver,
+			rowSelectionResolver,
+			qhResolver,
+		)
+
+	// =========================================================
+	// USE CASES
+	// =========================================================
+
+	startSession :=
+		application.NewStartSession(
+			sessionRepository,
+			questionnaireResolver,
+		)
+
+	processAnswer :=
+		application.NewProcessAnswer(
+			answerRepository,
+			questionnaireResolver,
+		)
+
+	// =========================================================
+	// HTTP
+	// =========================================================
+
+	qhHandler :=
+		qhhttp.NewHandler(
+			startSession,
+			processAnswer,
+		)
+
+	router :=
+		platformhttp.NewRouter(
+			qhHandler,
+		)
+
+	server :=
+		&http.Server{
+			Addr:
+				":" + port,
+
+			Handler:
+				router,
 		}
-	}()
 
-	select {
-	case err := <-serverErrors:
-		return fmt.Errorf(
-			"HTTP server failed: %w",
+	log.Printf(
+		"API listening on :%s",
+		port,
+	)
+
+	err =
+		server.ListenAndServe()
+
+	if err != nil &&
+		!errors.Is(
 			err,
-		)
+			http.ErrServerClosed,
+		) {
 
-	case <-shutdownContext.Done():
-		logger.Info("shutdown signal received")
-	}
-
-	gracefulContext, gracefulCancel :=
-		context.WithTimeout(
-			context.Background(),
-			10*time.Second,
-		)
-	defer gracefulCancel()
-
-	if err := server.Shutdown(gracefulContext); err != nil {
-		return fmt.Errorf(
-			"shutdown HTTP server: %w",
+		log.Fatalf(
+			"http server: %v",
 			err,
 		)
 	}
-
-	logger.Info("HTTP server stopped")
-
-	return nil
-}
-
-func registerHeatSourceRoutes(
-	mux *http.ServeMux,
-	handler *heatsourcehttp.Handler,
-) {
-	mux.HandleFunc(
-		"GET /api/v1/boiler-houses",
-		handler.ListBoilerHouses,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/network-types",
-		handler.ListNetworkTypes,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/insulation-materials",
-		handler.ListInsulationMaterials,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/laying-methods",
-		handler.ListLayingMethods,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/soil-types",
-		handler.ListSoilTypes,
-	)
-
-	mux.HandleFunc(
-		"GET /api/v1/calculation-operations",
-		handler.ListCalculationOperations,
-	)
-}
-
-func registerCalculationRoutes(
-	mux *http.ServeMux,
-	handler *calculationhttp.Handler,
-) {
-	mux.HandleFunc(
-		"POST /api/v1/calculations",
-		handler.Calculate,
-	)
 }
