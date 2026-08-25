@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"lostHeat/internal/qh/domain"
@@ -41,6 +42,10 @@ func (r *QHResultRepository) ReplaceForSession(
 
 	defer tx.Rollback(ctx)
 
+	// =========================================================
+	// Удаляем старые результаты этой сессии
+	// =========================================================
+
 	_, err =
 		tx.Exec(
 			ctx,
@@ -65,14 +70,28 @@ func (r *QHResultRepository) ReplaceForSession(
 			len(results),
 		)
 
+	// =========================================================
+	// ВАЖНО:
+	//
+	// реальные названия колонок в PostgreSQL:
+	//
+	// calculated_supply_temp_c
+	// calculated_return_temp_c
+	//
+	// а НЕ:
+	//
+	// calculated_supply_temperature_c
+	// calculated_return_temperature_c
+	// =========================================================
+
 	const insertQuery = `
 		INSERT INTO qh_results (
 			session_id,
 			qh_table_id,
 			qh_row_id,
 			pipeline_role,
-			calculated_supply_temperature_c,
-			calculated_return_temperature_c,
+			calculated_supply_temp_c,
+			calculated_return_temp_c,
 			base_qh_w_per_m,
 			adjusted_qh_w_per_m,
 			calculation_details
@@ -93,7 +112,8 @@ func (r *QHResultRepository) ReplaceForSession(
 			created_at
 	`
 
-	for _, result := range results {
+	for _, result :=
+		range results {
 
 		details :=
 			result.CalculationDetails
@@ -107,14 +127,25 @@ func (r *QHResultRepository) ReplaceForSession(
 			tx.QueryRow(
 				ctx,
 				insertQuery,
+
 				result.SessionID,
+
 				result.QHTableID,
+
 				result.QHRowID,
-				string(result.PipelineRole),
+
+				string(
+					result.PipelineRole,
+				),
+
 				result.CalculatedSupplyTemperatureC,
+
 				result.CalculatedReturnTemperatureC,
+
 				result.BaseQHWPerM,
+
 				result.AdjustedQHWPerM,
+
 				string(details),
 			).Scan(
 				&result.ID,
@@ -128,13 +159,18 @@ func (r *QHResultRepository) ReplaceForSession(
 			)
 		}
 
-		saved = append(
-			saved,
-			result,
-		)
+		saved =
+			append(
+				saved,
+				result,
+			)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err :=
+		tx.Commit(
+			ctx,
+		); err != nil {
+
 		return nil, fmt.Errorf(
 			"commit qh result transaction: %w",
 			err,
@@ -149,6 +185,13 @@ func (r *QHResultRepository) GetBySessionID(
 	sessionID int64,
 ) ([]domain.QHResult, error) {
 
+	// =========================================================
+	// Здесь тоже исправлены реальные имена колонок:
+	//
+	// calculated_supply_temp_c
+	// calculated_return_temp_c
+	// =========================================================
+
 	const query = `
 		SELECT
 			id,
@@ -156,25 +199,33 @@ func (r *QHResultRepository) GetBySessionID(
 			qh_table_id,
 			qh_row_id,
 			pipeline_role,
-			calculated_supply_temperature_c::double precision,
-			calculated_return_temperature_c::double precision,
+
+			calculated_supply_temp_c::double precision,
+
+			calculated_return_temp_c::double precision,
+
 			base_qh_w_per_m::double precision,
+
 			adjusted_qh_w_per_m::double precision,
+
 			calculation_details,
+
 			created_at
 
 		FROM qh_results
 
 		WHERE session_id = $1
 
-		ORDER BY pipeline_role
+		ORDER BY
+			id
 	`
 
-	rows, err := r.pool.Query(
-		ctx,
-		query,
-		sessionID,
-	)
+	rows, err :=
+		r.pool.Query(
+			ctx,
+			query,
+			sessionID,
+		)
 
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -185,29 +236,44 @@ func (r *QHResultRepository) GetBySessionID(
 
 	defer rows.Close()
 
-	var result []domain.QHResult
+	var results []domain.QHResult
 
 	for rows.Next() {
 
-		var item domain.QHResult
+		var result domain.QHResult
 
-		var role string
+		var pipelineRole string
+
+		var supplyTemperature pgtype.Float8
+
+		var returnTemperature pgtype.Float8
 
 		var details []byte
 
-		err := rows.Scan(
-			&item.ID,
-			&item.SessionID,
-			&item.QHTableID,
-			&item.QHRowID,
-			&role,
-			&item.CalculatedSupplyTemperatureC,
-			&item.CalculatedReturnTemperatureC,
-			&item.BaseQHWPerM,
-			&item.AdjustedQHWPerM,
-			&details,
-			&item.CreatedAt,
-		)
+		err :=
+			rows.Scan(
+				&result.ID,
+
+				&result.SessionID,
+
+				&result.QHTableID,
+
+				&result.QHRowID,
+
+				&pipelineRole,
+
+				&supplyTemperature,
+
+				&returnTemperature,
+
+				&result.BaseQHWPerM,
+
+				&result.AdjustedQHWPerM,
+
+				&details,
+
+				&result.CreatedAt,
+			)
 
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -216,24 +282,57 @@ func (r *QHResultRepository) GetBySessionID(
 			)
 		}
 
-		item.PipelineRole =
-			domain.PipelineRole(role)
+		result.PipelineRole =
+			domain.PipelineRole(
+				pipelineRole,
+			)
 
-		item.CalculationDetails =
-			details
+		// =====================================================
+		// SUPPLY TEMPERATURE
+		// =====================================================
 
-		result = append(
-			result,
-			item,
-		)
+		if supplyTemperature.Valid {
+
+			value :=
+				supplyTemperature.Float64
+
+			result.CalculatedSupplyTemperatureC =
+				&value
+		}
+
+		// =====================================================
+		// RETURN TEMPERATURE
+		// =====================================================
+
+		if returnTemperature.Valid {
+
+			value :=
+				returnTemperature.Float64
+
+			result.CalculatedReturnTemperatureC =
+				&value
+		}
+
+		result.CalculationDetails =
+			json.RawMessage(
+				details,
+			)
+
+		results =
+			append(
+				results,
+				result,
+			)
 	}
 
-	if err := rows.Err(); err != nil {
+	if err :=
+		rows.Err(); err != nil {
+
 		return nil, fmt.Errorf(
 			"iterate qh results: %w",
 			err,
 		)
 	}
 
-	return result, nil
+	return results, nil
 }

@@ -173,7 +173,7 @@ func (r *QHResolver) Resolve(
 	}
 
 	// =========================================================
-	// 5. Сначала нужно знать REGULATION_TYPE
+	// 5. Сначала нужно знать REGULATION_TYPE (количественная или качественная)
 	// =========================================================
 
 	regulationAnswer, answered :=
@@ -742,18 +742,11 @@ func resolveReturnQH(
 
 	var matches []domain.QHValue
 
-	for _, value :=
-		range values {
+	for _, value := range values {
 
 		if value.PipelineRole !=
 			domain.PipelineRoleReturn {
 
-			continue
-		}
-
-		// Пока работаем только со значениями
-		// без placement_variant.
-		if value.PlacementVariant != nil {
 			continue
 		}
 
@@ -774,7 +767,6 @@ func resolveReturnQH(
 	}
 
 	if len(matches) == 0 {
-
 		return qhLookupResult{},
 			fmt.Errorf(
 				"return qh for temperature %g °C not found",
@@ -783,7 +775,6 @@ func resolveReturnQH(
 	}
 
 	if len(matches) > 1 {
-
 		return qhLookupResult{},
 			fmt.Errorf(
 				"multiple return qh values found for temperature %g °C",
@@ -791,30 +782,20 @@ func resolveReturnQH(
 			)
 	}
 
-	value :=
-		matches[0]
+	value := matches[0]
 
 	return qhLookupResult{
-		QH:
-			value.QHWPerM,
+		QH: value.QHWPerM,
 
-		Method:
-			"EXACT",
+		Method: "EXACT",
 
-		TargetTemperature:
-			targetTemperature,
+		TargetTemperature: targetTemperature,
 
-		FromTemperature:
-			targetTemperature,
+		FromTemperature: targetTemperature,
+		ToTemperature:   targetTemperature,
 
-		ToTemperature:
-			targetTemperature,
-
-		FromQH:
-			value.QHWPerM,
-
-		ToQH:
-			value.QHWPerM,
+		FromQH: value.QHWPerM,
+		ToQH:   value.QHWPerM,
 	}, nil
 }
 
@@ -846,10 +827,6 @@ func resolveSupplyQH(
 		if value.PipelineRole !=
 			domain.PipelineRoleSupply {
 
-			continue
-		}
-
-		if value.PlacementVariant != nil {
 			continue
 		}
 

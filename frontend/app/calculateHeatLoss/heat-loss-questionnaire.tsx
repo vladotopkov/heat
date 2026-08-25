@@ -5,7 +5,8 @@ import { useState, type FormEvent } from "react";
 type QuestionInputType = "text" | "number" | "date" | "boolean" | "select";
 
 type QuestionOption = {
-  value: string;
+  value_text?: string | null;
+  value_numeric?: number | null;
   label: string;
 };
 
@@ -26,16 +27,29 @@ type SelectedTable = {
   title: string;
 };
 
+type SelectedRow = {
+  id: number;
+  source_row_no: number;
+};
+
+type QHResult = {
+  pipeline_role: string;
+  calculated_supply_temperature_c?: number | null;
+  calculated_return_temperature_c?: number | null;
+  base_qh_w_per_m: number;
+  adjusted_qh_w_per_m: number;
+};
+
 type QuestionnaireState = {
   session_id: number;
   status: string;
   question?: Question | null;
   table?: SelectedTable | null;
+  row?: SelectedRow | null;
+  results?: QHResult[];
 };
 
-type ErrorResponse = {
-  error?: string;
-};
+type ErrorResponse = { error?: string };
 
 const questionInputTypes: readonly QuestionInputType[] = [
   "text",
@@ -50,35 +64,68 @@ const terminalStatusContent: Record<
   { title: string; description: string }
 > = {
   UNSUPPORTED: {
-    title: "Не удалось подобрать таблицу",
+    title: "Не удалось подобрать нормативную таблицу",
     description:
-      "Для указанной комбинации параметров пока нет подходящей нормативной таблицы.",
+      "Для указанной комбинации параметров на сервере нет подходящей нормативной таблицы.",
   },
   AMBIGUOUS: {
-    title: "Нужно уточнить правила подбора",
+    title: "Подходят несколько таблиц",
     description:
-      "Ответы подходят сразу к нескольким таблицам. Проверьте правила выбора на сервере.",
+      "Ответы соответствуют нескольким правилам подбора. Проверьте настройки правил на сервере.",
   },
   ERROR: {
     title: "Расчёт завершился с ошибкой",
-    description: "Создайте новую сессию и попробуйте заполнить опросник ещё раз.",
+    description: "Начните новый подбор и заполните опросник ещё раз.",
+  },
+  COMPLETED: {
+    title: "Результат расчёта не получен",
+    description:
+      "Сервер завершил сессию, но не вернул значения удельных тепловых потерь.",
   },
 };
 
+const pipelineRoleLabels: Record<string, string> = {
+  RETURN: "Обратный трубопровод",
+  SUPPLY: "Подающий трубопровод",
+  TWO_PIPE_TOTAL: "Двухтрубная сеть",
+  DHW_SUPPLY: "Подающий трубопровод ГВС",
+  DHW_CIRCULATION: "Циркуляционный трубопровод ГВС",
+  SINGLE: "Трубопровод",
+};
+
+const numberFormatter = new Intl.NumberFormat("ru-RU", {
+  maximumFractionDigits: 3,
+});
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isOptionalString(value: unknown) {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isOptionalNumber(value: unknown) {
+  return value === undefined || value === null || isFiniteNumber(value);
+}
+
 function isQuestionOption(value: unknown): value is QuestionOption {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
+  if (typeof value !== "object" || value === null) return false;
 
   const option = value as Record<string, unknown>;
+  const hasTextValue = typeof option.value_text === "string";
+  const hasNumericValue = isFiniteNumber(option.value_numeric);
 
-  return typeof option.value === "string" && typeof option.label === "string";
+  return (
+    typeof option.label === "string" &&
+    isOptionalString(option.value_text) &&
+    isOptionalNumber(option.value_numeric) &&
+    hasTextValue !== hasNumericValue
+  );
 }
 
 function isQuestion(value: unknown): value is Question {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
+  if (typeof value !== "object" || value === null) return false;
 
   const question = value as Record<string, unknown>;
 
@@ -88,15 +135,9 @@ function isQuestion(value: unknown): value is Question {
     typeof question.phase === "string" &&
     typeof question.input_type === "string" &&
     questionInputTypes.includes(question.input_type as QuestionInputType) &&
-    (question.description === undefined ||
-      question.description === null ||
-      typeof question.description === "string") &&
-    (question.unit === undefined ||
-      question.unit === null ||
-      typeof question.unit === "string") &&
-    (question.option_source === undefined ||
-      question.option_source === null ||
-      typeof question.option_source === "string") &&
+    isOptionalString(question.description) &&
+    isOptionalString(question.unit) &&
+    isOptionalString(question.option_source) &&
     (question.options === undefined ||
       (Array.isArray(question.options) &&
         question.options.every(isQuestionOption)))
@@ -104,45 +145,59 @@ function isQuestion(value: unknown): value is Question {
 }
 
 function isSelectedTable(value: unknown): value is SelectedTable {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
+  if (typeof value !== "object" || value === null) return false;
 
   const table = value as Record<string, unknown>;
-
   return (
-    typeof table.id === "number" &&
+    isFiniteNumber(table.id) &&
     typeof table.code === "string" &&
     typeof table.title === "string"
   );
 }
 
+function isSelectedRow(value: unknown): value is SelectedRow {
+  if (typeof value !== "object" || value === null) return false;
+
+  const row = value as Record<string, unknown>;
+  return isFiniteNumber(row.id) && isFiniteNumber(row.source_row_no);
+}
+
+function isQHResult(value: unknown): value is QHResult {
+  if (typeof value !== "object" || value === null) return false;
+
+  const result = value as Record<string, unknown>;
+  return (
+    typeof result.pipeline_role === "string" &&
+    isOptionalNumber(result.calculated_supply_temperature_c) &&
+    isOptionalNumber(result.calculated_return_temperature_c) &&
+    isFiniteNumber(result.base_qh_w_per_m) &&
+    isFiniteNumber(result.adjusted_qh_w_per_m)
+  );
+}
+
 function isQuestionnaireState(value: unknown): value is QuestionnaireState {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
+  if (typeof value !== "object" || value === null) return false;
 
   const state = value as Record<string, unknown>;
-
   return (
-    typeof state.session_id === "number" &&
+    isFiniteNumber(state.session_id) &&
     typeof state.status === "string" &&
     (state.question === undefined ||
       state.question === null ||
       isQuestion(state.question)) &&
     (state.table === undefined ||
       state.table === null ||
-      isSelectedTable(state.table))
+      isSelectedTable(state.table)) &&
+    (state.row === undefined || state.row === null || isSelectedRow(state.row)) &&
+    (state.results === undefined ||
+      (Array.isArray(state.results) && state.results.every(isQHResult)))
   );
 }
 
 function getErrorMessage(value: unknown, fallback: string) {
-  if (typeof value !== "object" || value === null) {
-    return fallback;
-  }
+  if (typeof value !== "object" || value === null) return fallback;
 
   const { error } = value as ErrorResponse;
-
   return typeof error === "string" && error ? error : fallback;
 }
 
@@ -152,6 +207,10 @@ async function readJSON(response: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+function formatNumber(value: number) {
+  return numberFormatter.format(value);
 }
 
 function AnswerField({
@@ -199,7 +258,15 @@ function AnswerField({
     );
   }
 
-  if (question.input_type === "select" && question.options?.length) {
+  if (question.input_type === "select") {
+    if (!question.options?.length) {
+      return (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+          Сервер не вернул варианты ответа для этого вопроса.
+        </div>
+      );
+    }
+
     return (
       <label className="block" htmlFor="question-answer">
         <span className="text-sm font-semibold text-slate-700">
@@ -217,8 +284,8 @@ function AnswerField({
           <option value="" disabled>
             Выберите ответ
           </option>
-          {question.options.map((option) => (
-            <option key={option.value} value={option.value}>
+          {question.options.map((option, index) => (
+            <option key={`${question.code}-${index}`} value={String(index)}>
               {option.label}
             </option>
           ))}
@@ -249,16 +316,58 @@ function AnswerField({
         inputMode={inputType === "number" ? "decimal" : undefined}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={
-          question.input_type === "select"
-            ? "Введите значение"
-            : question.input_type === "text"
-              ? "Введите ответ"
-              : undefined
-        }
+        placeholder={question.input_type === "text" ? "Введите ответ" : undefined}
         className="mt-3 min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
       />
     </label>
+  );
+}
+
+function TemperatureValue({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-white/70 px-4 py-3">
+      <dt className="text-xs font-medium text-slate-500">{label}</dt>
+      <dd className="mt-1 font-semibold text-slate-900">
+        {formatNumber(value)} °C
+      </dd>
+    </div>
+  );
+}
+
+function QHResultCard({ result }: { result: QHResult }) {
+  const role = pipelineRoleLabels[result.pipeline_role] ?? result.pipeline_role;
+
+  return (
+    <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
+      <p className="text-sm font-semibold text-emerald-800">{role}</p>
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-2">
+        <span className="text-3xl font-bold tracking-tight text-emerald-950">
+          {formatNumber(result.adjusted_qh_w_per_m)}
+        </span>
+        <span className="font-semibold text-emerald-800">Вт/м</span>
+      </div>
+      <p className="mt-2 text-sm text-emerald-800">
+        Базовое qh: {formatNumber(result.base_qh_w_per_m)} Вт/м
+      </p>
+
+      {(result.calculated_supply_temperature_c != null ||
+        result.calculated_return_temperature_c != null) && (
+        <dl className="mt-4 grid gap-2 sm:grid-cols-2">
+          {result.calculated_supply_temperature_c != null && (
+            <TemperatureValue
+              label="Расчётная температура подачи"
+              value={result.calculated_supply_temperature_c}
+            />
+          )}
+          {result.calculated_return_temperature_c != null && (
+            <TemperatureValue
+              label="Расчётная температура обратки"
+              value={result.calculated_return_temperature_c}
+            />
+          )}
+        </dl>
+      )}
+    </article>
   );
 }
 
@@ -273,34 +382,38 @@ function QuestionnaireResult({
   error: string | null;
   onRestart: () => void;
 }) {
-  if (state.table) {
+  const results = state.results ?? [];
+
+  if (state.status === "COMPLETED" && results.length > 0) {
     return (
       <section className="w-full" aria-labelledby="result-title">
         <p className="text-sm font-semibold text-emerald-700">
-          Таблица определена · сессия № {state.session_id}
+          Расчёт завершён · сессия № {state.session_id}
         </p>
         <h2
           id="result-title"
           className="mt-2 text-3xl font-semibold tracking-tight text-slate-950"
         >
-          Результат подбора
+          Удельные тепловые потери qh
         </h2>
 
-        <div className="mt-7 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
-          <div className="border-b border-emerald-200 px-5 py-3 text-xs font-semibold tracking-[0.14em] text-emerald-700 uppercase">
-            Нормативная таблица
-          </div>
-          <div className="p-5 sm:p-6">
-            <span className="inline-flex rounded-full bg-emerald-700 px-3 py-1 text-xs font-bold tracking-wide text-white">
-              {state.table.code}
+        {state.table && (
+          <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+            Таблица{" "}
+            <span className="font-semibold text-slate-900">
+              {state.table.code} — {state.table.title}
             </span>
-            <p className="mt-4 text-xl font-semibold leading-8 text-emerald-950">
-              {state.table.title}
-            </p>
-            <p className="mt-2 text-sm text-emerald-800">
-              Идентификатор таблицы: {state.table.id}
-            </p>
+            {state.row && `, строка ${state.row.source_row_no}`}
           </div>
+        )}
+
+        <div className="mt-5 grid gap-4">
+          {results.map((result, index) => (
+            <QHResultCard
+              key={`${result.pipeline_role}-${index}`}
+              result={result}
+            />
+          ))}
         </div>
 
         <RestartButton isLoading={isLoading} onRestart={onRestart} />
@@ -311,7 +424,7 @@ function QuestionnaireResult({
 
   const content = terminalStatusContent[state.status] ?? {
     title: "Опросник завершён",
-    description: `Сервер завершил сессию со статусом ${state.status}, но не вернул выбранную таблицу.`,
+    description: `Сервер завершил сессию со статусом ${state.status}, но не вернул результат qh.`,
   };
 
   return (
@@ -354,7 +467,7 @@ function RestartButton({
           Создаём сессию…
         </>
       ) : (
-        "Начать новый подбор"
+        "Начать новый расчёт"
       )}
     </button>
   );
@@ -394,15 +507,12 @@ export function HeatLossQuestionnaire() {
     setError(null);
 
     try {
-      const response = await fetch("/api/qh/sessions", {
-        method: "POST",
-      });
+      const response = await fetch("/api/qh/sessions", { method: "POST" });
       const data = await readJSON(response);
 
       if (!response.ok) {
         throw new Error(getErrorMessage(data, "Не удалось начать расчёт"));
       }
-
       if (!isQuestionnaireState(data)) {
         throw new Error("Сервер вернул некорректное состояние опросника");
       }
@@ -424,9 +534,7 @@ export function HeatLossQuestionnaire() {
   async function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!questionnaire?.question) {
-      return;
-    }
+    if (!questionnaire?.question || isSubmitting) return;
 
     const currentQuestion = questionnaire.question;
     const normalizedAnswer = answer.trim();
@@ -436,17 +544,35 @@ export function HeatLossQuestionnaire() {
 
     switch (currentQuestion.input_type) {
       case "text":
-      case "select":
         if (!normalizedAnswer) {
-          setError(
-            currentQuestion.input_type === "select"
-              ? "Выберите вариант ответа"
-              : "Введите ответ",
-          );
+          setError("Введите ответ");
           return;
         }
         payload.value_text = normalizedAnswer;
         break;
+      case "select": {
+        if (!normalizedAnswer) {
+          setError("Выберите вариант ответа");
+          return;
+        }
+
+        const optionIndex = Number(normalizedAnswer);
+        const selectedOption = currentQuestion.options?.[optionIndex];
+
+        if (!Number.isInteger(optionIndex) || !selectedOption) {
+          setError("Выберите вариант ответа");
+          return;
+        }
+        if (typeof selectedOption.value_text === "string") {
+          payload.value_text = selectedOption.value_text;
+        } else if (isFiniteNumber(selectedOption.value_numeric)) {
+          payload.value_numeric = selectedOption.value_numeric;
+        } else {
+          setError("Выбранный вариант не содержит значения");
+          return;
+        }
+        break;
+      }
       case "number": {
         if (!normalizedAnswer) {
           setError("Введите числовое значение");
@@ -454,12 +580,10 @@ export function HeatLossQuestionnaire() {
         }
 
         const numericAnswer = Number(normalizedAnswer.replace(",", "."));
-
         if (!Number.isFinite(numericAnswer)) {
           setError("Введите корректное числовое значение");
           return;
         }
-
         payload.value_numeric = numericAnswer;
         break;
       }
@@ -487,9 +611,7 @@ export function HeatLossQuestionnaire() {
         `/api/qh/sessions/${questionnaire.session_id}/answers`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         },
       );
@@ -498,7 +620,6 @@ export function HeatLossQuestionnaire() {
       if (!response.ok) {
         throw new Error(getErrorMessage(data, "Не удалось сохранить ответ"));
       }
-
       if (!isQuestionnaireState(data)) {
         throw new Error("Сервер вернул некорректное состояние опросника");
       }
@@ -517,7 +638,10 @@ export function HeatLossQuestionnaire() {
     }
   }
 
-  const hasResult = Boolean(questionnaire && !questionnaire.question);
+  const results = questionnaire?.results ?? [];
+  const hasResult =
+    questionnaire?.status === "COMPLETED" && results.length > 0;
+  const isTerminal = Boolean(questionnaire && !questionnaire.question);
 
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-slate-950 px-4 py-8 text-slate-950 sm:px-6 sm:py-12">
@@ -560,25 +684,25 @@ export function HeatLossQuestionnaire() {
           {questionnaire && (
             <span
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                questionnaire.table
+                hasResult
                   ? "bg-emerald-50 text-emerald-700"
-                  : hasResult
+                  : isTerminal
                     ? "bg-amber-50 text-amber-700"
                     : "bg-orange-50 text-orange-700"
               }`}
             >
               <span
                 className={`size-1.5 rounded-full ${
-                  questionnaire.table
+                  hasResult
                     ? "bg-emerald-500"
-                    : hasResult
+                    : isTerminal
                       ? "bg-amber-500"
                       : "bg-orange-500"
                 }`}
               />
-              {questionnaire.table
-                ? "Таблица выбрана"
-                : hasResult
+              {hasResult
+                ? "qh рассчитан"
+                : isTerminal
                   ? "Сессия завершена"
                   : "Сессия активна"}
             </span>
@@ -591,17 +715,16 @@ export function HeatLossQuestionnaire() {
               className="absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(249,115,22,0.25),transparent_35%),radial-gradient(circle_at_90%_85%,rgba(14,165,233,0.16),transparent_34%)]"
               aria-hidden="true"
             />
-
             <div className="relative">
               <p className="mb-5 text-xs font-semibold tracking-[0.18em] text-orange-400 uppercase">
-                Подбор нормативной таблицы
+                Поиск удельных тепловых потерь
               </p>
               <h1 className="max-w-md text-3xl font-semibold tracking-tight sm:text-4xl sm:leading-[1.12]">
                 Ответьте на вопросы о тепловой сети
               </h1>
               <p className="mt-5 max-w-md text-sm leading-6 text-slate-300 sm:text-base sm:leading-7">
-                Система будет задавать только те вопросы, которые нужны для
-                выбора подходящей нормативной таблицы.
+                Бэкенд задаст только необходимые вопросы, выберет нормативную
+                таблицу и рассчитает qh для нужных трубопроводов.
               </p>
             </div>
 
@@ -609,14 +732,14 @@ export function HeatLossQuestionnaire() {
               {[
                 ["01", "Запуск"],
                 ["02", "Вопросы"],
-                ["03", "Таблица"],
+                ["03", "Результат"],
               ].map(([number, label], index) => (
                 <div
                   key={number}
                   className={`border-t pt-3 ${
                     index === 0 ||
                     (index === 1 && questionnaire) ||
-                    (index === 2 && hasResult)
+                    (index === 2 && isTerminal)
                       ? "border-orange-400 text-white"
                       : "border-slate-700 text-slate-500"
                   }`}
@@ -636,7 +759,8 @@ export function HeatLossQuestionnaire() {
                 aria-live="polite"
               >
                 <p className="text-sm font-semibold text-orange-600">
-                  Вопрос {answeredQuestions + 1} · сессия № {questionnaire.session_id}
+                  Вопрос {answeredQuestions + 1} · сессия №{" "}
+                  {questionnaire.session_id}
                 </p>
                 <h2
                   id="question-title"
@@ -654,17 +778,20 @@ export function HeatLossQuestionnaire() {
                   <AnswerField
                     question={questionnaire.question}
                     value={answer}
-                    onChange={(value) => {
-                      setAnswer(value);
+                    onChange={(nextAnswer) => {
+                      setAnswer(nextAnswer);
                       setError(null);
                     }}
                   />
-
                   {error && <ErrorMessage message={error} />}
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={
+                      isSubmitting ||
+                      (questionnaire.question.input_type === "select" &&
+                        !questionnaire.question.options?.length)
+                    }
                     className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition hover:bg-orange-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-wait disabled:opacity-65 sm:w-auto"
                   >
                     {isSubmitting ? (
@@ -673,23 +800,7 @@ export function HeatLossQuestionnaire() {
                         Получаем следующий шаг…
                       </>
                     ) : (
-                      <>
-                        Ответить
-                        <svg
-                          viewBox="0 0 20 20"
-                          fill="none"
-                          className="size-4"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M4 10h12m-4-4 4 4-4 4"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </>
+                      "Ответить"
                     )}
                   </button>
                 </form>
@@ -703,16 +814,18 @@ export function HeatLossQuestionnaire() {
               />
             ) : (
               <section className="w-full" aria-labelledby="start-title">
-                <p className="text-sm font-semibold text-orange-600">Шаг 1 из 3</p>
+                <p className="text-sm font-semibold text-orange-600">
+                  Шаг 1 из 3
+                </p>
                 <h2
                   id="start-title"
                   className="mt-2 text-3xl font-semibold tracking-tight text-slate-950"
                 >
-                  Начните новый подбор
+                  Начните новый расчёт
                 </h2>
                 <p className="mt-4 max-w-lg leading-7 text-slate-600">
-                  Мы создадим отдельную сессию, последовательно соберём ответы и
-                  покажем выбранную нормативную таблицу.
+                  Создадим сессию на бэкенде, последовательно соберём ответы и
+                  покажем найденные значения qh.
                 </p>
 
                 <button
@@ -727,26 +840,9 @@ export function HeatLossQuestionnaire() {
                       Создаём сессию…
                     </>
                   ) : (
-                    <>
-                      Начать подбор
-                      <svg
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        className="size-4"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M4 10h12m-4-4 4 4-4 4"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </>
+                    "Начать расчёт"
                   )}
                 </button>
-
                 {error && <ErrorMessage message={error} />}
               </section>
             )}
