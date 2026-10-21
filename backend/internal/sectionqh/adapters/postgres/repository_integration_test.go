@@ -72,8 +72,8 @@ func TestRepositoryAgainstDatabase(t *testing.T) {
 	if match.QHValue.ID != 51 {
 		t.Errorf("selected qh_value id = %d, want 51", match.QHValue.ID)
 	}
-	if math.Abs(match.QHValue.Value-51.6) > 1e-9 {
-		t.Errorf("selected qh_value = %v, want 51.6", match.QHValue.Value)
+	if math.Abs(match.QHValue.Value-53.925) > 1e-9 {
+		t.Errorf("selected qh_value = %v, want 53.925", match.QHValue.Value)
 	}
 
 	sections, err := sectionqhservice.New(repository).ListNetworkSections(ctx, 1)
@@ -84,9 +84,9 @@ func TestRepositoryAgainstDatabase(t *testing.T) {
 		t.Fatalf("sections count = %d, want 34", len(sections.Sections))
 	}
 	if sections.Sections[0].QHValue == nil ||
-		math.Abs(sections.Sections[0].QHValue.Value-51.6) > 1e-9 {
+		math.Abs(sections.Sections[0].QHValue.Value-53.925) > 1e-9 {
 		t.Errorf(
-			"first section qh_value = %#v, want 51.6",
+			"first section qh_value = %#v, want 53.925",
 			sections.Sections[0].QHValue,
 		)
 	}

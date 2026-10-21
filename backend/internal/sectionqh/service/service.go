@@ -127,7 +127,11 @@ func (s *Service) ListNetworkSections(
 			valuesByTableID[section.QHTableID] = values
 		}
 
-		value, _, selectionErr := selectMostSpecificValue(section, values)
+		if usesEremichiSupply95(network, section) {
+			temperature := eremichiSupplyTemperatureC
+			section.SupplyTemperature = &temperature
+		}
+		value, _, selectionErr := selectNetworkSectionValue(network, section, values)
 		sectionResult := domain.NetworkSectionWithQH{
 			Section: section,
 		}
@@ -250,7 +254,16 @@ func (s *Service) GetQHValue(
 		return domain.Match{}, err
 	}
 
-	value, matchedFields, err := selectMostSpecificValue(
+	var network domain.HeatNetwork
+	if normalizeCode(section.QHTableCode) == "Б.15" {
+		network, err = s.repository.GetHeatNetwork(ctx, section.HeatNetworkID)
+		if err != nil {
+			return domain.Match{}, err
+		}
+	}
+
+	value, matchedFields, err := selectNetworkSectionValue(
+		network,
 		section,
 		values,
 	)
