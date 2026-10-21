@@ -38,7 +38,7 @@ services:
     volumes:
       - ./backend:/app
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${HEAT_LOSS_DATABASE_NAME:-heatLoss}?sslmode=disable
 
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
       REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER}

@@ -3,226 +3,89 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
+	"lostHeat/internal/config"
+	monthlylosspostgres "lostHeat/internal/monthlyloss/adapters/postgres"
+	monthlylosshttp "lostHeat/internal/monthlyloss/delivery/http"
+	monthlylossservice "lostHeat/internal/monthlyloss/service"
+	monthlytemperaturepostgres "lostHeat/internal/monthlytemperature/adapters/postgres"
+	monthlytemperaturehttp "lostHeat/internal/monthlytemperature/delivery/http"
+	monthlytemperatureservice "lostHeat/internal/monthlytemperature/service"
+	monthlyuptimepostgres "lostHeat/internal/monthlyuptime/adapters/postgres"
+	monthlyuptimehttp "lostHeat/internal/monthlyuptime/delivery/http"
+	monthlyuptimeservice "lostHeat/internal/monthlyuptime/service"
 	"lostHeat/internal/platform/database"
 	platformhttp "lostHeat/internal/platform/http"
-
-	"lostHeat/internal/qh/application"
-	qhhttp "lostHeat/internal/qh/http"
-	qhpostgres "lostHeat/internal/qh/postgres"
+	sectionqhpostgres "lostHeat/internal/sectionqh/adapters/postgres"
+	sectionqhhttp "lostHeat/internal/sectionqh/delivery/http"
+	sectionqhservice "lostHeat/internal/sectionqh/service"
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	ctx :=
-		context.Background()
-
-	databaseURL :=
-		os.Getenv(
-			"DATABASE_URL",
-		)
-
-	if databaseURL == "" {
-		log.Fatal(
-			"DATABASE_URL is required",
-		)
-	}
-
-	port :=
-		os.Getenv(
-			"PORT",
-		)
-
-	if port == "" {
-		port = "8080"
-	}
-
-	// =========================================================
-	// DATABASE
-	// =========================================================
-
-	pool, err :=
-		database.NewPostgresPool(
-			ctx,
-			databaseURL,
-		)
-
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf(
-			"connect to database: %v",
-			err,
-		)
+		logger.Error("load configuration", "error", err)
+		os.Exit(1)
 	}
 
+	ctx := context.Background()
+
+	pool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("connect to database", "error", err)
+		os.Exit(1)
+	}
 	defer pool.Close()
 
-	// =========================================================
-	// REPOSITORIES
-	// =========================================================
-
-	sessionRepository :=
-		qhpostgres.NewSessionRepository(
-			pool,
-		)
-
-	answerRepository :=
-		qhpostgres.NewAnswerRepository(
-			pool,
-		)
-
-	questionRepository :=
-		qhpostgres.NewQuestionRepository(
-			pool,
-		)
-
-	selectionRuleRepository :=
-		qhpostgres.NewSelectionRuleRepository(
-			pool,
-		)
-
-	qhTableRepository :=
-		qhpostgres.NewQHTableRepository(
-			pool,
-		)
-
-	tableDimensionRepository :=
-		qhpostgres.NewTableDimensionRepository(
-			pool,
-		)
-
-	rowRepository :=
-		qhpostgres.NewRowRepository(
-			pool,
-		)
-
-	temperatureRegimeRepository :=
-		qhpostgres.NewTemperatureRegimeRepository(
-			pool,
-		)
-
-	qhValueRepository :=
-		qhpostgres.NewQHValueRepository(
-			pool,
-		)
-
-	qhResultRepository :=
-		qhpostgres.NewQHResultRepository(
-			pool,
-		)
-
-	// =========================================================
-	// TABLE SELECTION
-	// =========================================================
-
-	tableSelectionResolver :=
-		application.NewTableSelectionResolver(
-			sessionRepository,
-			answerRepository,
-			selectionRuleRepository,
-			questionRepository,
-			qhTableRepository,
-		)
-
-	// =========================================================
-	// ROW SELECTION
-	// =========================================================
-
-	rowSelectionResolver :=
-		application.NewRowSelectionResolver(
-			sessionRepository,
-			answerRepository,
-			questionRepository,
-			tableDimensionRepository,
-			rowRepository,
-		)
-
-	// =========================================================
-	// QH
-	// =========================================================
-
-	qhResolver :=
-		application.NewQHResolver(
-			sessionRepository,
-			answerRepository,
-			questionRepository,
-			temperatureRegimeRepository,
-			qhValueRepository,
-			qhResultRepository,
-		)
-
-	// =========================================================
-	// ОБЩИЙ QUESTIONNAIRE RESOLVER
-	// =========================================================
-
-	questionnaireResolver :=
-		application.NewQuestionnaireResolver(
-			sessionRepository,
-			qhTableRepository,
-			tableSelectionResolver,
-			rowSelectionResolver,
-			qhResolver,
-		)
-
-	// =========================================================
-	// USE CASES
-	// =========================================================
-
-	startSession :=
-		application.NewStartSession(
-			sessionRepository,
-			questionnaireResolver,
-		)
-
-	processAnswer :=
-		application.NewProcessAnswer(
-			answerRepository,
-			questionnaireResolver,
-		)
-
-	// =========================================================
-	// HTTP
-	// =========================================================
-
-	qhHandler :=
-		qhhttp.NewHandler(
-			startSession,
-			processAnswer,
-		)
-
-	router :=
-		platformhttp.NewRouter(
-			qhHandler,
-		)
-
-	server :=
-		&http.Server{
-			Addr:
-				":" + port,
-
-			Handler:
-				router,
-		}
-
-	log.Printf(
-		"API listening on :%s",
-		port,
+	repository := sectionqhpostgres.New(pool)
+	sectionQHService := sectionqhservice.New(repository)
+	sectionQHHandler := sectionqhhttp.New(sectionQHService, logger)
+	monthlyTemperatureRepository := monthlytemperaturepostgres.New(pool)
+	monthlyTemperatureService := monthlytemperatureservice.New(
+		monthlyTemperatureRepository,
 	)
+	monthlyTemperatureHandler := monthlytemperaturehttp.New(
+		monthlyTemperatureService,
+		logger,
+	)
+	monthlyUptimeRepository := monthlyuptimepostgres.New(pool)
+	monthlyUptimeService := monthlyuptimeservice.New(monthlyUptimeRepository)
+	monthlyUptimeHandler := monthlyuptimehttp.New(
+		monthlyUptimeService,
+		logger,
+	)
+	monthlyLossRepository := monthlylosspostgres.New(pool)
+	monthlyLossService := monthlylossservice.New(
+		monthlyLossRepository,
+		sectionQHService,
+	)
+	monthlyLossHandler := monthlylosshttp.New(monthlyLossService, logger)
 
-	err =
-		server.ListenAndServe()
+	server := &http.Server{
+		Addr: ":" + cfg.Port,
+		Handler: platformhttp.NewRouter(
+			sectionQHHandler,
+			monthlyTemperatureHandler,
+			monthlyUptimeHandler,
+			monthlyLossHandler,
+		),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
-	if err != nil &&
-		!errors.Is(
-			err,
-			http.ErrServerClosed,
-		) {
+	logger.Info("API listening", "address", server.Addr)
 
-		log.Fatalf(
-			"http server: %v",
-			err,
-		)
+	if err := server.ListenAndServe(); err != nil &&
+		!errors.Is(err, http.ErrServerClosed) {
+		logger.Error("HTTP server stopped", "error", err)
+		os.Exit(1)
 	}
 }
