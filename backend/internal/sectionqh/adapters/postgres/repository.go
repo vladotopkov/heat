@@ -25,7 +25,11 @@ func (r *Repository) ListHeatNetworks(
 	const query = `
 		SELECT
 			id,
-			name
+			name,
+			project_supply_temperature_c::double precision,
+			project_return_temperature_c::double precision,
+			gvs_project_supply_temperature_c::double precision,
+			gvs_project_circulation_temperature_c::double precision
 		FROM public."HeatNetwork"
 		ORDER BY name, id
 	`
@@ -41,7 +45,14 @@ func (r *Repository) ListHeatNetworks(
 	for rows.Next() {
 		var network domain.HeatNetwork
 
-		if err := rows.Scan(&network.ID, &network.Name); err != nil {
+		if err := rows.Scan(
+			&network.ID,
+			&network.Name,
+			&network.ProjectSupplyTemperature,
+			&network.ProjectReturnTemperature,
+			&network.GVSProjectSupplyTemperature,
+			&network.GVSProjectCirculationTemperature,
+		); err != nil {
 			return nil, fmt.Errorf("scan heat network: %w", err)
 		}
 
@@ -62,7 +73,11 @@ func (r *Repository) GetHeatNetwork(
 	const query = `
 		SELECT
 			id,
-			name
+			name,
+			project_supply_temperature_c::double precision,
+			project_return_temperature_c::double precision,
+			gvs_project_supply_temperature_c::double precision,
+			gvs_project_circulation_temperature_c::double precision
 		FROM public."HeatNetwork"
 		WHERE id = $1
 	`
@@ -72,6 +87,10 @@ func (r *Repository) GetHeatNetwork(
 	err := r.pool.QueryRow(ctx, query, id).Scan(
 		&network.ID,
 		&network.Name,
+		&network.ProjectSupplyTemperature,
+		&network.ProjectReturnTemperature,
+		&network.GVSProjectSupplyTemperature,
+		&network.GVSProjectCirculationTemperature,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.HeatNetwork{}, fmt.Errorf(
@@ -116,7 +135,10 @@ func (r *Repository) GetNetworkSection(
 			ns.return_shell_outer_diameter_mm::double precision,
 			ns.length_m::double precision,
 			ns.project_date,
-			ns.beta::double precision
+			ns.beta::double precision,
+			ns.network_type,
+			ns.joint_channel_id,
+			ns.section_name
 		FROM public."NetworkSection" AS ns
 		JOIN public.qh_tables AS qt ON qt.id = ns.qh_table_id
 		WHERE ns.id = $1
@@ -171,7 +193,10 @@ func (r *Repository) ListNetworkSectionsByHeatNetworkID(
 			ns.return_shell_outer_diameter_mm::double precision,
 			ns.length_m::double precision,
 			ns.project_date,
-			ns.beta::double precision
+			ns.beta::double precision,
+			ns.network_type,
+			ns.joint_channel_id,
+			ns.section_name
 		FROM public."NetworkSection" AS ns
 		JOIN public.qh_tables AS qt ON qt.id = ns.qh_table_id
 		WHERE ns.heat_network_id = $1
@@ -244,6 +269,9 @@ func scanNetworkSection(
 		&section.LengthM,
 		&section.ProjectDate,
 		&section.Beta,
+		&section.NetworkType,
+		&section.JointChannelID,
+		&section.SectionName,
 	)
 }
 

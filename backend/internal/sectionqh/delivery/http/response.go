@@ -13,6 +13,9 @@ type heatNetworksResponse struct {
 
 type networkSectionResponse struct {
 	ID                    int64    `json:"id"`
+	NetworkType           string   `json:"network_type"`
+	JointChannelID        *int64   `json:"joint_channel_id"`
+	SectionName           *string  `json:"section_name"`
 	SupplyOuterDiameterMM *float64 `json:"supply_outer_diameter_mm"`
 	LayingType            *string  `json:"laying_type"`
 	UndergroundLayingType *string  `json:"underground_laying_type"`
@@ -21,6 +24,8 @@ type networkSectionResponse struct {
 	LengthM               *float64 `json:"length_m"`
 	ProjectDate           *string  `json:"project_date"`
 	QHValue               *float64 `json:"qh_value"`
+	QHSupply              *float64 `json:"qh_supply"`
+	QHReturn              *float64 `json:"qh_return"`
 	QHError               *string  `json:"qh_error,omitempty"`
 	Beta                  *float64 `json:"beta"`
 	BetaError             *string  `json:"beta_error,omitempty"`
@@ -34,8 +39,10 @@ type networkSectionsResponse struct {
 type qhValueResponse struct {
 	NetworkSectionID   int64    `json:"network_section_id"`
 	QHTableID          int64    `json:"qh_table_id"`
-	QHValueID          int64    `json:"qh_value_id"`
+	QHValueID          *int64   `json:"qh_value_id"`
 	QHValue            float64  `json:"qh_value"`
+	QHSupply           *float64 `json:"qh_supply"`
+	QHReturn           *float64 `json:"qh_return"`
 	PipelineRole       *string  `json:"pipeline_role,omitempty"`
 	SourceInterpolated bool     `json:"source_interpolated"`
 	Note               *string  `json:"note,omitempty"`
@@ -79,6 +86,9 @@ func newNetworkSectionsResponse(
 		section := sectionResult.Section
 		sectionResponse := networkSectionResponse{
 			ID:                    section.ID,
+			NetworkType:           section.NetworkType,
+			JointChannelID:        section.JointChannelID,
+			SectionName:           section.SectionName,
 			SupplyOuterDiameterMM: section.SupplyOuterDiameter,
 			LayingType:            section.LayingType,
 			UndergroundLayingType: section.UndergroundLayingType,
@@ -97,6 +107,8 @@ func newNetworkSectionsResponse(
 		if sectionResult.QHValue != nil {
 			value := sectionResult.QHValue.Value
 			sectionResponse.QHValue = &value
+			sectionResponse.QHSupply = sectionResult.QHValue.SupplyValue
+			sectionResponse.QHReturn = sectionResult.QHValue.ReturnValue
 		}
 
 		if sectionResult.Beta != nil {
@@ -120,11 +132,17 @@ func newHeatNetworkResponse(
 }
 
 func newQHValueResponse(match domain.Match) qhValueResponse {
+	var sourceID *int64
+	if match.QHValue.ID != 0 {
+		sourceID = &match.QHValue.ID
+	}
 	return qhValueResponse{
 		NetworkSectionID:   match.NetworkSectionID,
 		QHTableID:          match.QHTableID,
-		QHValueID:          match.QHValue.ID,
+		QHValueID:          sourceID,
 		QHValue:            match.QHValue.Value,
+		QHSupply:           match.QHValue.SupplyValue,
+		QHReturn:           match.QHValue.ReturnValue,
 		PipelineRole:       match.QHValue.PipelineRole,
 		SourceInterpolated: match.QHValue.SourceInterpolated,
 		Note:               match.QHValue.Note,

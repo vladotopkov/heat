@@ -16,6 +16,9 @@ type HeatNetwork = {
 
 type NetworkSection = {
   id: number;
+  section_name: string | null;
+  network_type: string;
+  joint_channel_id: number | null;
   supply_outer_diameter_mm: number | null;
   laying_type: string | null;
   underground_laying_type: string | null;
@@ -24,6 +27,8 @@ type NetworkSection = {
   length_m: number | null;
   project_date: string | null;
   qh_value: number | null;
+  qh_supply: number | null;
+  qh_return: number | null;
   qh_error?: string;
   beta: number | null;
   beta_error?: string;
@@ -43,6 +48,7 @@ type ErrorResponse = {
 };
 
 type SectionColumn =
+  | "sectionName"
   | "id"
   | "supplyOuterDiameter"
   | "layingType"
@@ -297,7 +303,7 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
   const totalNormalizedHeatLossPerHour =
     calculateTotalNormalizedHeatLossPerHour(data.sections);
   const showOuterDiameter = data.heat_network.name === "Еремичи";
-  const tableClassName = `${showOuterDiameter ? "w-[1485px]" : "w-[1340px]"} table-fixed border-collapse text-left`;
+  const tableClassName = `${showOuterDiameter ? "w-[1745px]" : "w-[1600px]"} table-fixed border-collapse text-left`;
 
   function toggleColumn(column: SectionColumn) {
     setSelectedColumn((current) => (current === column ? null : column));
@@ -418,6 +424,7 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
             <SectionsColumnWidths showOuterDiameter={showOuterDiameter} />
             <thead className="sr-only">
               <tr className="border-b border-[#dfe6e0] bg-[#f6f8f6] text-[11px] font-bold tracking-[0.065em] text-[#66766e] uppercase">
+                <th className="px-3 py-4">Название участка</th>
                 <th className="w-28 px-5 py-4 sm:px-6">ID участка</th>
                 {showOuterDiameter ? (
                   <th scope="col" className="px-4 py-4 text-center">
@@ -477,6 +484,13 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
                   className="group transition-colors hover:bg-[#f8faf8]"
                 >
                   <td
+                    className={`px-3 py-4 text-sm font-medium wrap-break-word text-[#2c3934] transition-colors ${
+                      selectedColumn === "sectionName" ? "bg-[#eaf4ed]" : ""
+                    }`}
+                  >
+                    {section.section_name?.trim() || "-"}
+                  </td>
+                  <td
                     className={`px-3 py-4 text-center transition-colors ${
                       selectedColumn === "id" ? "bg-[#eaf4ed]" : ""
                     }`}
@@ -506,10 +520,17 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
                         title={section.qh_error}
                         className="inline-flex rounded-full bg-[#f9ebe6] px-2.5 py-1 text-xs font-semibold text-[#a14c38]"
                       >
-                        Не найдено
+                        {data.heat_network.id === 2 && section.joint_channel_id != null
+                          ? "Совместная прокладка"
+                          : "Не найдено"}
                       </span>
                     ) : (
-                      <span className="inline-flex rounded-full bg-[#e5f2ea] px-2.5 py-1 text-sm font-bold text-[#246047] tabular-nums">
+                      <span
+                        title={section.qh_supply != null && section.qh_return != null
+                          ? `Подача: ${formatNumber(section.qh_supply)}; ${section.network_type === "GVS" ? "циркуляция" : "обратка"}: ${formatNumber(section.qh_return)} Вт/м`
+                          : undefined}
+                        className="inline-flex rounded-full bg-[#e5f2ea] px-2.5 py-1 text-sm font-bold text-[#246047] tabular-nums"
+                      >
                         {formatNumber(section.qh_value)}
                       </span>
                     )}
@@ -622,6 +643,7 @@ function SectionsColumnWidths({
 }) {
   return (
     <colgroup>
+      <col className="w-[260px]" />
       <col className="w-[105px]" />
       {showOuterDiameter ? <col className="w-[145px]" /> : null}
       <col className="w-[115px]" />
@@ -648,6 +670,12 @@ function SectionsHeaderRow({
 }) {
   return (
     <tr className="bg-[#f6f8f6] text-sm font-semibold tracking-[-0.01em] text-[#17221f]">
+      <SectionColumnHeader
+        column="sectionName"
+        label="Название участка"
+        selectedColumn={selectedColumn}
+        onSelect={onSelect}
+      />
       <SectionColumnHeader
         column="id"
         label="ID участка"

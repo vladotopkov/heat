@@ -15,7 +15,7 @@ func TestTotalNormalizedHeatLossPerHour(t *testing.T) {
 	beta := 1.15
 	diameter := 57.0
 	stub := &repositoryStub{
-		network: domain.HeatNetwork{ID: 1, Name: "Еремичи"},
+		network: eremichiNetwork(95, 50),
 		sections: []domain.NetworkSection{{
 			ID:                  4,
 			HeatNetworkID:       1,
@@ -55,7 +55,7 @@ func TestTotalNormalizedHeatLossPerHourReportsMissingLength(t *testing.T) {
 	beta := 1.0
 	diameter := 57.0
 	stub := &repositoryStub{
-		network: domain.HeatNetwork{ID: 1, Name: "Еремичи"},
+		network: eremichiNetwork(95, 50),
 		sections: []domain.NetworkSection{{
 			ID:                  4,
 			HeatNetworkID:       1,

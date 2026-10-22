@@ -15,18 +15,25 @@ var (
 )
 
 type HeatNetwork struct {
-	ID   int64
-	Name string
+	ID                               int64
+	Name                             string
+	ProjectSupplyTemperature         *float64
+	ProjectReturnTemperature         *float64
+	GVSProjectSupplyTemperature      *float64
+	GVSProjectCirculationTemperature *float64
 }
 
 // NetworkSection contains only the section characteristics which have a
 // direct (or safely derivable) counterpart in qh_values.
 type NetworkSection struct {
-	ID            int64
-	HeatNetworkID int64
-	QHTableID     int64
-	QHTableCode   string
-	QHTableName   string
+	ID             int64
+	HeatNetworkID  int64
+	QHTableID      int64
+	QHTableCode    string
+	QHTableName    string
+	NetworkType    string
+	JointChannelID *int64
+	SectionName    *string
 
 	LayingType            *string
 	UndergroundLayingType *string
@@ -92,6 +99,8 @@ type QHValue struct {
 	ReturnTemperatureC          *float64
 	Value                       float64
 	SourceInterpolated          bool
+	SupplyValue                 *float64
+	ReturnValue                 *float64
 	Note                        *string
 }
 

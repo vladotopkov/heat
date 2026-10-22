@@ -63,9 +63,9 @@ func TestB15Supply95AllDiameters(t *testing.T) {
 				ReturnOuterDiameter: number(1420), ReturnTemperature: number(70),
 				SupplyTemperature: number(90),
 			}
-			value, fields, err := selectB15Supply95(section, values)
+			value, fields, err := selectB15Supply(section, values, 95)
 			if err != nil {
-				t.Fatalf("selectB15Supply95() error = %v", err)
+				t.Fatalf("selectB15Supply() error = %v", err)
 			}
 			if math.Abs(value.Value-row.want) > 1e-9 {
 				t.Errorf("q95 = %g, want %g", value.Value, row.want)
@@ -139,7 +139,7 @@ func TestB15Supply95RejectsMissingOrInconsistentAnchors(t *testing.T) {
 			}
 			values := b15Values(57, 10, 20.5)
 			test.change(&section, &values)
-			_, _, err := selectB15Supply95(section, values)
+			_, _, err := selectB15Supply(section, values, 95)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
 			}
@@ -153,13 +153,13 @@ func TestEremichiSupply95ServicePaths(t *testing.T) {
 	for _, storedTemperature := range []*float64{nil, number(90), number(95)} {
 		t.Run(fmt.Sprint(storedTemperature), func(t *testing.T) {
 			section := domain.NetworkSection{
-				ID: 42, HeatNetworkID: 8, QHTableID: 7, QHTableCode: "Б.15",
+				ID: 42, HeatNetworkID: 1, QHTableID: 7, QHTableCode: "Б.15",
 				SupplyOuterDiameter: number(159), ReturnOuterDiameter: number(159),
-				SupplyTemperature: storedTemperature, ReturnTemperature: number(50),
+				SupplyTemperature: storedTemperature, ReturnTemperature: number(70),
 				Beta: number(1), LengthM: number(100),
 			}
 			stub := &repositoryStub{
-				network: domain.HeatNetwork{ID: 8, Name: "Еремичи"},
+				network: eremichiNetwork(95, 50),
 				section: section, sections: []domain.NetworkSection{section},
 				values: b15Values(159, 16.5, 35.1),
 			}
@@ -172,7 +172,7 @@ func TestEremichiSupply95ServicePaths(t *testing.T) {
 			if math.Abs(match.QHValue.Value-53.925) > 1e-9 {
 				t.Errorf("GetQHValue() = %g, want 53.925", match.QHValue.Value)
 			}
-			result, err := service.ListNetworkSections(context.Background(), 8)
+			result, err := service.ListNetworkSections(context.Background(), 1)
 			if err != nil {
 				t.Fatalf("ListNetworkSections() error = %v", err)
 			}
@@ -184,9 +184,9 @@ func TestEremichiSupply95ServicePaths(t *testing.T) {
 				t.Errorf("displayed supply temperature = %v, want 95", got.Section.SupplyTemperature)
 			}
 			if got.Section.ReturnTemperature == nil || *got.Section.ReturnTemperature != 50 {
-				t.Error("return temperature changed")
+				t.Error("displayed return temperature must come from HeatNetwork")
 			}
-			total, reason, err := service.TotalNormalizedHeatLossPerHour(context.Background(), 8)
+			total, reason, err := service.TotalNormalizedHeatLossPerHour(context.Background(), 1)
 			if err != nil || reason != nil || math.Abs(total-19413) > 1e-9 {
 				t.Errorf("total = %g, reason = %v, error = %v; want 19413", total, reason, err)
 			}
@@ -213,7 +213,8 @@ func TestEremichiSupply95PreservesOtherNetworksAndTables(t *testing.T) {
 				SupplyTemperature: number(90), ReturnTemperature: number(50),
 			}
 			stub := &repositoryStub{
-				network: domain.HeatNetwork{ID: 1, Name: test.name},
+				network: domain.HeatNetwork{ID: 3, Name: test.name,
+					ProjectSupplyTemperature: number(95), ProjectReturnTemperature: number(70)},
 				section: section, sections: []domain.NetworkSection{section},
 				values: b15Values(159, 16.5, 35.1),
 			}
@@ -251,7 +252,7 @@ func TestEremichiSupply95PreservesReturnSelection(t *testing.T) {
 		PressurePipeWallThicknessMM: number(3.5), Value: 10,
 	}
 	values = append(values, returnValue)
-	got, _, err := selectNetworkSectionValue(domain.HeatNetwork{Name: "Еремичи"}, section, values)
+	got, _, err := selectNetworkSectionValue(eremichiNetwork(95, 50), section, values)
 	if err != nil || !reflect.DeepEqual(got, returnValue) {
 		t.Errorf("return result = %#v, error = %v; want unchanged %#v", got, err, returnValue)
 	}
@@ -271,7 +272,7 @@ func TestEremichiSupply95UsesSupplyDiameterWithDifferentReturn(t *testing.T) {
 		otherDiameterValues[index].ID += 3
 	}
 	values = append(values, otherDiameterValues...)
-	got, _, err := selectNetworkSectionValue(domain.HeatNetwork{Name: "Еремичи"}, section, values)
+	got, _, err := selectB15Supply(section, values, 95)
 	if err != nil || math.Abs(got.Value-37.425) > 1e-9 ||
 		got.PipelineRole == nil || *got.PipelineRole != "SUPPLY" {
 		t.Errorf("supply result = %#v, error = %v; want 37.425", got, err)
@@ -288,7 +289,7 @@ func TestEremichiSupply95PreservesTabulatedTotalRounding(t *testing.T) {
 	}
 	values := b15Values(57, 10, 20.5)
 	values[2].Value = 30.6 // B.15 total differs from its rounded component sum, 30.5.
-	got, _, err := selectNetworkSectionValue(domain.HeatNetwork{Name: "Еремичи"}, section, values)
+	got, _, err := selectNetworkSectionValue(eremichiNetwork(95, 50), section, values)
 	if err != nil || math.Abs(got.Value-31.9125) > 1e-9 {
 		t.Errorf("total result = %#v, error = %v; want 31.9125", got, err)
 	}
@@ -309,4 +310,12 @@ func b15Values(diameter, q50, q90 float64) []domain.QHValue {
 	qTotal.PipelineRole = text("TWO_PIPE_TOTAL")
 	qTotal.SupplyTemperatureC, qTotal.ReturnTemperatureC = number(90), number(50)
 	return []domain.QHValue{qReturn, qSupply, qTotal}
+}
+
+func eremichiNetwork(supply, returnTemperature float64) domain.HeatNetwork {
+	return domain.HeatNetwork{
+		ID: 1, Name: "Еремичи",
+		ProjectSupplyTemperature: number(supply),
+		ProjectReturnTemperature: number(returnTemperature),
+	}
 }

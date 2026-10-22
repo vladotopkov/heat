@@ -96,7 +96,7 @@ func TestListNetworkSectionsLoadsQHValuesOncePerTable(t *testing.T) {
 	t.Parallel()
 
 	stub := &repositoryStub{
-		network: domain.HeatNetwork{ID: 1, Name: "Еремичи"},
+		network: eremichiNetwork(95, 50),
 		sections: []domain.NetworkSection{
 			{
 				ID:                  1,
