@@ -72,6 +72,18 @@ func (s *Service) Save(
 		return domain.NetworkTemperature{}, err
 	}
 
+	if (values.GVSSupply == nil) != (values.GVSReturn == nil) {
+		return domain.NetworkTemperature{}, fmt.Errorf(
+			"%w: gvs_supply_t and gvs_return_t must be provided together",
+			domain.ErrInvalidTemperature,
+		)
+	}
+	if values.GVSSupply != nil && heatNetworkID != 2 {
+		return domain.NetworkTemperature{}, fmt.Errorf(
+			"%w: GVS temperatures are only supported for heat network 2",
+			domain.ErrInvalidTemperature,
+		)
+	}
 	if err := validateValues(values); err != nil {
 		return domain.NetworkTemperature{}, err
 	}
@@ -114,6 +126,8 @@ func validateValues(values domain.Values) error {
 		{name: "supply_t", value: values.Supply},
 		{name: "return_t", value: values.Return},
 		{name: "ground_t", value: values.Ground},
+		{name: "gvs_supply_t", value: optionalTemperature(values.GVSSupply)},
+		{name: "gvs_return_t", value: optionalTemperature(values.GVSReturn)},
 	}
 
 	for _, field := range fields {
@@ -130,4 +144,11 @@ func validateValues(values domain.Values) error {
 	}
 
 	return nil
+}
+
+func optionalTemperature(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }

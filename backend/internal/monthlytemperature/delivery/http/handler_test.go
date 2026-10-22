@@ -137,6 +137,36 @@ func TestSaveRejectsMissingField(t *testing.T) {
 	}
 }
 
+func TestSaveGVSRequest(t *testing.T) {
+	t.Parallel()
+	supply, returnT := 65.5, 40.25
+	stub := &serviceStub{saved: domain.NetworkTemperature{
+		HeatNetworkID: 2,
+		Month:         time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC),
+		GVSSupply:     &supply, GVSReturn: &returnT,
+	}}
+	request := httptest.NewRequest(http.MethodPut,
+		"/api/v1/heat-networks/2/temperatures/2026-10",
+		strings.NewReader(`{"supply_t":90,"return_t":50,"ground_t":8,"gvs_supply_t":65.5,"gvs_return_t":40.25}`))
+	request.SetPathValue("heatNetworkID", "2")
+	request.SetPathValue("month", "2026-10")
+	response := httptest.NewRecorder()
+	New(stub, discardLogger()).Save(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if stub.saveNetworkID != 2 || stub.saveMonth.Format("2006-01") != "2026-10" ||
+		stub.saveValues.GVSSupply == nil || *stub.saveValues.GVSSupply != supply ||
+		stub.saveValues.GVSReturn == nil || *stub.saveValues.GVSReturn != returnT {
+		t.Fatalf("unexpected save: %#v", stub)
+	}
+	for _, part := range []string{`"gvs_supply_t":65.5`, `"gvs_return_t":40.25`} {
+		if !strings.Contains(response.Body.String(), part) {
+			t.Errorf("body = %s, want %s", response.Body.String(), part)
+		}
+	}
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

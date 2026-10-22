@@ -38,6 +38,7 @@ func (r *Repository) ListInputsForMonth(
 		LEFT JOIN public.temperatures AS t
 			ON t.heat_network_id = hn.id
 			AND t.month = $1::date
+			AND t.network_type = 'HEATING'
 		LEFT JOIN public.up_time AS u
 			ON u.heat_network_id = hn.id
 			AND u.month = $1::date

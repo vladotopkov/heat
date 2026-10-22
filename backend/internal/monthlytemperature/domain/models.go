@@ -19,10 +19,14 @@ type NetworkTemperature struct {
 	Supply          *float64
 	Return          *float64
 	Ground          *float64
+	GVSSupply       *float64
+	GVSReturn       *float64
 }
 
 type Values struct {
-	Supply float64
-	Return float64
-	Ground float64
+	Supply    float64
+	Return    float64
+	Ground    float64
+	GVSSupply *float64
+	GVSReturn *float64
 }

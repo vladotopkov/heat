@@ -13,7 +13,10 @@ import (
 )
 
 type Repository struct {
-	pool *pgxpool.Pool
+	pool interface {
+		Query(context.Context, string, ...any) (pgx.Rows, error)
+		QueryRow(context.Context, string, ...any) pgx.Row
+	}
 }
 
 func New(pool *pgxpool.Pool) *Repository {
@@ -32,12 +35,19 @@ func (r *Repository) ListForMonth(
 			$1::date,
 			t.supply_t::double precision,
 			t.return_t::double precision,
-			t.ground_t::double precision
+			t.ground_t::double precision,
+			gvs.supply_t::double precision,
+			gvs.return_t::double precision
 		FROM public."HeatNetwork" AS hn
 		LEFT JOIN public.temperatures AS t
 			ON t.heat_network_id = hn.id
 			AND t.month = $1::date
-		ORDER BY hn.name, hn.id
+			AND t.network_type = 'HEATING'
+		LEFT JOIN public.temperatures AS gvs
+			ON hn.id = 2 AND gvs.heat_network_id = hn.id
+			AND gvs.month = $1::date
+			AND gvs.network_type = 'GVS'
+		ORDER BY hn.id
 	`
 
 	rows, err := r.pool.Query(ctx, query, month)
@@ -57,6 +67,8 @@ func (r *Repository) ListForMonth(
 			&row.Supply,
 			&row.Return,
 			&row.Ground,
+			&row.GVSSupply,
+			&row.GVSReturn,
 		); err != nil {
 			return nil, fmt.Errorf("scan monthly temperatures: %w", err)
 		}
@@ -89,16 +101,24 @@ func (r *Repository) Upsert(
 			month,
 			supply_t,
 			return_t,
-			ground_t
+			ground_t,
+			network_type
 		)
 		SELECT
 			hn.id,
 			$2::date,
-			$3,
-			$4,
-			$5
+			v.supply_t,
+			v.return_t,
+			$5,
+			v.network_type
 		FROM target_network AS hn
-		ON CONFLICT (heat_network_id, month)
+		CROSS JOIN (VALUES
+			('HEATING', $3::numeric, $4::numeric),
+			('GVS', $6::numeric, $7::numeric)
+		) AS v(network_type, supply_t, return_t)
+		WHERE v.network_type = 'HEATING'
+			OR (hn.id = 2 AND v.supply_t IS NOT NULL AND v.return_t IS NOT NULL)
+		ON CONFLICT (heat_network_id, month, network_type)
 		DO UPDATE SET
 			supply_t = EXCLUDED.supply_t,
 			return_t = EXCLUDED.return_t,
@@ -109,7 +129,8 @@ func (r *Repository) Upsert(
 			month,
 			supply_t::double precision,
 			return_t::double precision,
-			ground_t::double precision
+			ground_t::double precision,
+			network_type
 		)
 		SELECT
 			u.id,
@@ -118,9 +139,17 @@ func (r *Repository) Upsert(
 			u.month,
 			u.supply_t,
 			u.return_t,
-			u.ground_t
+			u.ground_t,
+			COALESCE(gvs.supply_t, existing_gvs.supply_t)::double precision,
+			COALESCE(gvs.return_t, existing_gvs.return_t)::double precision
 		FROM upserted AS u
 		JOIN target_network AS tn ON tn.id = u.heat_network_id
+		LEFT JOIN upserted AS gvs
+			ON gvs.heat_network_id = u.heat_network_id AND gvs.network_type = 'GVS'
+		LEFT JOIN public.temperatures AS existing_gvs
+			ON u.heat_network_id = 2 AND existing_gvs.heat_network_id = u.heat_network_id
+			AND existing_gvs.month = u.month AND existing_gvs.network_type = 'GVS'
+		WHERE u.network_type = 'HEATING'
 	`
 
 	row := domain.NetworkTemperature{
@@ -135,6 +164,8 @@ func (r *Repository) Upsert(
 		values.Supply,
 		values.Return,
 		values.Ground,
+		values.GVSSupply,
+		values.GVSReturn,
 	).Scan(
 		&row.ID,
 		&row.HeatNetworkID,
@@ -143,6 +174,8 @@ func (r *Repository) Upsert(
 		&row.Supply,
 		&row.Return,
 		&row.Ground,
+		&row.GVSSupply,
+		&row.GVSReturn,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.NetworkTemperature{}, fmt.Errorf(

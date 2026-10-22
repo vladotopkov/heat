@@ -12,6 +12,8 @@ type TemperatureRow = {
   supply_t: number | null;
   return_t: number | null;
   ground_t: number | null;
+  gvs_supply_t: number | null;
+  gvs_return_t: number | null;
 };
 
 type TemperaturesResponse = {
@@ -27,6 +29,8 @@ type Draft = {
   supply: string;
   returnTemperature: string;
   ground: string;
+  gvsSupply: string;
+  gvsReturn: string;
 };
 
 type TemperatureColumn =
@@ -34,6 +38,8 @@ type TemperatureColumn =
   | "supply"
   | "return"
   | "ground"
+  | "gvsSupply"
+  | "gvsReturn"
   | "actions";
 
 const temperatureFormatter = new Intl.NumberFormat("ru-RU", {
@@ -112,6 +118,8 @@ export function TemperaturesWorkspace({
       supply: inputValue(row.supply_t),
       returnTemperature: inputValue(row.return_t),
       ground: inputValue(row.ground_t),
+      gvsSupply: inputValue(row.gvs_supply_t),
+      gvsReturn: inputValue(row.gvs_return_t),
     });
   }
 
@@ -131,6 +139,15 @@ export function TemperaturesWorkspace({
       return;
     }
 
+    const hasGVS = row.heat_network_id === 2 &&
+      (draft.gvsSupply.trim() !== "" || draft.gvsReturn.trim() !== "");
+    const gvsSupply = parseTemperature(draft.gvsSupply);
+    const gvsReturn = parseTemperature(draft.gvsReturn);
+    if (hasGVS && (gvsSupply === null || gvsReturn === null)) {
+      setEditError("Заполните подачу и обратку ГВС числами от −9999,99 до 9999,99");
+      return;
+    }
+
     setSavingID(row.heat_network_id);
     setEditError(null);
 
@@ -144,6 +161,7 @@ export function TemperaturesWorkspace({
             supply_t: supply,
             return_t: returnTemperature,
             ground_t: ground,
+            ...(hasGVS ? { gvs_supply_t: gvsSupply, gvs_return_t: gvsReturn } : {}),
           }),
         },
       );
@@ -225,7 +243,7 @@ export function TemperaturesWorkspace({
             <>
               <div className="sticky top-0 z-30 overflow-hidden rounded-t-[20px] border-y border-[#194a38] bg-[#225e49] shadow-[0_8px_18px_rgba(28,52,43,0.18)]">
                 <div ref={stickyHeaderTrack} className="will-change-transform">
-                  <table className="w-full min-w-[820px] table-fixed border-collapse text-left">
+                  <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
                     <TemperatureColumnWidths />
                     <thead>
                       <TemperatureHeaderRow
@@ -243,7 +261,7 @@ export function TemperaturesWorkspace({
                   syncHeaderScroll(event.currentTarget.scrollLeft)
                 }
               >
-                <table className="w-full min-w-[820px] table-fixed border-collapse text-left">
+                <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
                   <TemperatureColumnWidths />
                   <thead className="sr-only">
                     <tr>
@@ -251,6 +269,8 @@ export function TemperaturesWorkspace({
                       <th>Температура подачи, °C</th>
                       <th>Температура обратки, °C</th>
                       <th>Температура грунта, °C</th>
+                      <th>Подача ГВС, °C</th>
+                      <th>Обратка ГВС, °C</th>
                       <th>Действия</th>
                     </tr>
                   </thead>
@@ -279,6 +299,11 @@ export function TemperaturesWorkspace({
                               {row.heat_network_name}
                             </p>
                           </div>
+                          {row.heat_network_id === 2 && editing ? (
+                            <p className="mt-2 text-xs text-[#64746c]">
+                              Для ГВС заполните оба поля. Температура грунта общая.
+                            </p>
+                          ) : null}
                           {editing && editError ? (
                             <p className="mt-2 text-xs font-medium text-[#a14c38]">
                               {editError}
@@ -292,6 +317,7 @@ export function TemperaturesWorkspace({
                         </td>
                         <TemperatureCell
                           editing={editing}
+                          disabled={saving}
                           selected={selectedColumn === "supply"}
                           label={`Температура подачи, ${row.heat_network_name}`}
                           value={row.supply_t}
@@ -305,6 +331,7 @@ export function TemperaturesWorkspace({
                         />
                         <TemperatureCell
                           editing={editing}
+                          disabled={saving}
                           selected={selectedColumn === "return"}
                           label={`Температура обратки, ${row.heat_network_name}`}
                           value={row.return_t}
@@ -318,6 +345,7 @@ export function TemperaturesWorkspace({
                         />
                         <TemperatureCell
                           editing={editing}
+                          disabled={saving}
                           selected={selectedColumn === "ground"}
                           label={`Температура грунта, ${row.heat_network_name}`}
                           value={row.ground_t}
@@ -327,6 +355,28 @@ export function TemperaturesWorkspace({
                               ...current,
                               ground: value,
                             }))
+                          }
+                        />
+                        <TemperatureCell
+                          editing={editing && row.heat_network_id === 2}
+                          disabled={saving}
+                          selected={selectedColumn === "gvsSupply"}
+                          label={`Подача ГВС, ${row.heat_network_name}`}
+                          value={row.heat_network_id === 2 ? row.gvs_supply_t : null}
+                          draftValue={draft.gvsSupply}
+                          onChange={(value) =>
+                            setDraft((current) => ({ ...current, gvsSupply: value }))
+                          }
+                        />
+                        <TemperatureCell
+                          editing={editing && row.heat_network_id === 2}
+                          disabled={saving}
+                          selected={selectedColumn === "gvsReturn"}
+                          label={`Обратка ГВС, ${row.heat_network_name}`}
+                          value={row.heat_network_id === 2 ? row.gvs_return_t : null}
+                          draftValue={draft.gvsReturn}
+                          onChange={(value) =>
+                            setDraft((current) => ({ ...current, gvsReturn: value }))
                           }
                         />
                         <td
@@ -381,7 +431,9 @@ export function TemperaturesWorkspace({
 function TemperatureColumnWidths() {
   return (
     <colgroup>
-      <col className="w-[30%]" />
+      <col className="w-[24%]" />
+      <col />
+      <col />
       <col />
       <col />
       <col />
@@ -422,6 +474,20 @@ function TemperatureHeaderRow({
       <TemperatureColumnHeader
         column="ground"
         label="Темп. грунта"
+        unit="°C"
+        selectedColumn={selectedColumn}
+        onSelect={onSelect}
+      />
+      <TemperatureColumnHeader
+        column="gvsSupply"
+        label="Подача ГВС"
+        unit="°C"
+        selectedColumn={selectedColumn}
+        onSelect={onSelect}
+      />
+      <TemperatureColumnHeader
+        column="gvsReturn"
+        label="Обратка ГВС"
         unit="°C"
         selectedColumn={selectedColumn}
         onSelect={onSelect}
@@ -485,6 +551,7 @@ function TemperatureColumnHeader({
 
 function TemperatureCell({
   editing,
+  disabled,
   selected,
   label,
   value,
@@ -492,6 +559,7 @@ function TemperatureCell({
   onChange,
 }: {
   editing: boolean;
+  disabled: boolean;
   selected: boolean;
   label: string;
   value: number | null;
@@ -511,6 +579,7 @@ function TemperatureCell({
             inputMode="decimal"
             aria-label={label}
             value={draftValue}
+            disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
             className="w-full rounded-xl border border-[#b9cbbf] bg-white py-2 pr-8 pl-3 text-right text-sm font-semibold tabular-nums outline-none transition focus:border-[#4f866d] focus:ring-3 focus:ring-[#4f866d]/12"
           />
@@ -533,8 +602,10 @@ function TableSkeleton() {
       {[0, 1, 2, 3].map((item) => (
         <div
           key={item}
-          className="grid grid-cols-5 gap-4 border-b border-[#edf0ed] py-4"
+          className="grid grid-cols-7 gap-4 border-b border-[#edf0ed] py-4"
         >
+          <div className="h-8 rounded-lg bg-[#e5ebe6]" />
+          <div className="h-8 rounded-lg bg-[#eef2ee]" />
           <div className="h-8 rounded-lg bg-[#e5ebe6]" />
           <div className="h-8 rounded-lg bg-[#eef2ee]" />
           <div className="h-8 rounded-lg bg-[#e5ebe6]" />
@@ -557,8 +628,8 @@ async function requestJSON<T>(url: string, init: RequestInit = {}) {
   return body;
 }
 
-function inputValue(value: number | null) {
-  return value === null ? "" : String(value).replace(".", ",");
+function inputValue(value: number | null | undefined) {
+  return value == null ? "" : String(value).replace(".", ",");
 }
 
 function parseTemperature(value: string) {
@@ -572,7 +643,7 @@ function parseTemperature(value: string) {
 }
 
 function emptyDraft(): Draft {
-  return { supply: "", returnTemperature: "", ground: "" };
+  return { supply: "", returnTemperature: "", ground: "", gvsSupply: "", gvsReturn: "" };
 }
 
 function errorMessage(error: unknown) {

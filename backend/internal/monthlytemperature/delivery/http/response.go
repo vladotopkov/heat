@@ -14,6 +14,8 @@ type temperatureResponse struct {
 	Supply          *float64 `json:"supply_t"`
 	Return          *float64 `json:"return_t"`
 	Ground          *float64 `json:"ground_t"`
+	GVSSupply       *float64 `json:"gvs_supply_t"`
+	GVSReturn       *float64 `json:"gvs_return_t"`
 }
 
 type listResponse struct {
@@ -55,5 +57,7 @@ func newTemperatureResponse(
 		Supply:          row.Supply,
 		Return:          row.Return,
 		Ground:          row.Ground,
+		GVSSupply:       row.GVSSupply,
+		GVSReturn:       row.GVSReturn,
 	}
 }

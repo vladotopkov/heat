@@ -101,9 +101,11 @@ func (h *Handler) Save(
 		heatNetworkID,
 		month,
 		domain.Values{
-			Supply: *request.Supply,
-			Return: *request.Return,
-			Ground: *request.Ground,
+			Supply:    *request.Supply,
+			Return:    *request.Return,
+			Ground:    *request.Ground,
+			GVSSupply: request.GVSSupply,
+			GVSReturn: request.GVSReturn,
 		},
 	)
 	if err != nil {

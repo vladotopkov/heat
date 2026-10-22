@@ -103,3 +103,40 @@ func TestSaveRejectsInvalidTemperature(t *testing.T) {
 		t.Fatalf("Save() error = %v, want ErrInvalidTemperature", err)
 	}
 }
+
+func TestSaveGVSValidation(t *testing.T) {
+	t.Parallel()
+	ptr := func(value float64) *float64 { return &value }
+	for _, tc := range []struct {
+		name            string
+		networkID       int64
+		supply, returnT *float64
+		valid           bool
+	}{
+		{name: "military town", networkID: 2, supply: ptr(65.5), returnT: ptr(40), valid: true},
+		{name: "zero temperatures", networkID: 2, supply: ptr(0), returnT: ptr(0), valid: true},
+		{name: "heating only", networkID: 2, valid: true},
+		{name: "other network", networkID: 1, supply: ptr(65), returnT: ptr(40)},
+		{name: "missing return", networkID: 2, supply: ptr(65)},
+		{name: "missing supply", networkID: 2, returnT: ptr(40)},
+		{name: "out of range", networkID: 2, supply: ptr(10000), returnT: ptr(40)},
+		{name: "not finite", networkID: 2, supply: ptr(65), returnT: ptr(math.NaN())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &repositoryStub{}
+			values := domain.Values{Supply: 90, Return: 50, Ground: 8, GVSSupply: tc.supply, GVSReturn: tc.returnT}
+			_, err := New(stub).Save(context.Background(), tc.networkID,
+				time.Date(2026, time.October, 21, 0, 0, 0, 0, time.UTC), values)
+			if tc.valid {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if stub.saveValues != values || stub.saveMonth.Format("2006-01-02") != "2026-10-01" {
+					t.Fatalf("unexpected save: %#v at %s", stub.saveValues, stub.saveMonth)
+				}
+			} else if !errors.Is(err, domain.ErrInvalidTemperature) || stub.saveNetworkID != 0 {
+				t.Fatalf("invalid values reached repository or wrong error: %v", err)
+			}
+		})
+	}
+}
