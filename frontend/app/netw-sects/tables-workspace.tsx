@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 
+import { MonthPicker } from "../_components/month-picker";
 import { SiteHeader } from "../_components/site-header";
 
 type HeatNetwork = {
@@ -342,19 +343,12 @@ export function TablesWorkspace() {
                     </div>
                   </div>
 
-                  <label className="block sm:w-56">
-                    <span className="mb-2 block text-xs font-semibold text-[#66766e]">
-                      Расчётный месяц
-                    </span>
-                    <input
-                      type="month"
-                      value={calculationMonth}
-                      onChange={(event) =>
-                        changeCalculationMonth(event.target.value)
-                      }
-                      className="h-11 w-full rounded-xl border border-[#cfd9d1] bg-white px-3 text-sm font-semibold text-[#24322d] outline-none transition focus:border-[#39715b] focus:ring-2 focus:ring-[#39715b]/15"
-                    />
-                  </label>
+                  <MonthPicker
+                    label="Расчётный месяц"
+                    value={calculationMonth}
+                    onChange={changeCalculationMonth}
+                    variant="compact"
+                  />
                 </div>
               ) : null}
             </div>
@@ -515,13 +509,32 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
     startX: 0,
     scrollLeft: 0,
   });
+  const isMilitaryTown = data.heat_network.id === 2;
   const totalNormalizedHeatLossPerHour =
     calculateTotalNormalizedHeatLossPerHour(data.sections);
+  const militaryTownGVSTotalNormalizedHeatLossPerHour =
+    calculateTotalNormalizedHeatLossPerHour(
+      data.sections.filter(
+        (section) =>
+          section.joint_channel_id === null && section.network_type === "GVS",
+      ),
+    );
+  const militaryTownHeatingTotalNormalizedHeatLossPerHour =
+    calculateTotalNormalizedHeatLossPerHour(
+      data.sections.filter(
+        (section) =>
+          section.joint_channel_id === null &&
+          section.network_type === "HEATING",
+      ),
+    );
+  const showSectionName = data.heat_network.id !== 1;
   const showOuterDiameter = data.heat_network.name === "Еремичи";
   const showJointCalculations = data.heat_network.id === 2;
   const tableClassName = `${
     showJointCalculations
       ? "w-[3320px]"
+      : !showSectionName
+        ? "w-[1485px]"
       : showOuterDiameter
         ? "w-[1745px]"
         : "w-[1600px]"
@@ -579,26 +592,26 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
           </h2>
         </div>
 
-        <div className="shrink-0 rounded-2xl border border-[#dce6df] bg-[#f3f7f4] px-4 py-3 sm:text-right">
-          <p className="text-[11px] font-bold tracking-[0.08em] text-[#66766e] uppercase">
-            ΣQнорм:
-          </p>
-          {totalNormalizedHeatLossPerHour === null ? (
-            <p
-              title="Для расчёта суммы необходимы qh, β и длина каждого участка"
-              className="mt-1 text-sm font-semibold text-[#a14c38]"
-            >
-              Недостаточно данных
-            </p>
-          ) : (
-            <p className="mt-1 text-lg font-bold text-[#245f4a] tabular-nums">
-              {formatNumber(totalNormalizedHeatLossPerHour)}
-              <span className="ml-1 text-xs font-semibold text-[#718078]">
-                кДж/ч
-              </span>
-            </p>
-          )}
-        </div>
+        {isMilitaryTown ? (
+          <div className="grid shrink-0 divide-y divide-[#dce6df] overflow-hidden rounded-2xl border border-[#dce6df] bg-[#f3f7f4] sm:grid-cols-2 sm:divide-x sm:divide-y-0 sm:text-right">
+            <NormalizedHeatLossSummary
+              label="ΣQнорм. ГВС:"
+              value={militaryTownGVSTotalNormalizedHeatLossPerHour}
+            />
+            <NormalizedHeatLossSummary
+              label="ΣQнорм. отоп:"
+              value={militaryTownHeatingTotalNormalizedHeatLossPerHour}
+            />
+          </div>
+        ) : (
+          <div className="shrink-0 rounded-2xl border border-[#dce6df] bg-[#f3f7f4] px-4 py-3 sm:text-right">
+            <NormalizedHeatLossSummary
+              label="ΣQнорм:"
+              value={totalNormalizedHeatLossPerHour}
+              compact
+            />
+          </div>
+        )}
       </div>
 
       {data.sections.length === 0 ? (
@@ -619,11 +632,13 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
             <div ref={stickyHeaderTrack} className="will-change-transform">
               <table className={tableClassName}>
                 <SectionsColumnWidths
+                  showSectionName={showSectionName}
                   showOuterDiameter={showOuterDiameter}
                   showJointCalculations={showJointCalculations}
                 />
                 <thead>
                   <SectionsHeaderRow
+                    showSectionName={showSectionName}
                     showOuterDiameter={showOuterDiameter}
                     showJointCalculations={showJointCalculations}
                     selectedColumn={selectedColumn}
@@ -648,12 +663,15 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
           >
           <table className={tableClassName}>
             <SectionsColumnWidths
+              showSectionName={showSectionName}
               showOuterDiameter={showOuterDiameter}
               showJointCalculations={showJointCalculations}
             />
             <thead className="sr-only">
               <tr className="border-b border-[#dfe6e0] bg-[#f6f8f6] text-[11px] font-bold tracking-[0.065em] text-[#66766e] uppercase">
-                <th className="px-3 py-4">Название участка</th>
+                {showSectionName ? (
+                  <th className="px-3 py-4">Название участка</th>
+                ) : null}
                 <th className="w-28 px-5 py-4 sm:px-6">ID участка</th>
                 {showJointCalculations ? <th>ID канала</th> : null}
                 {showJointCalculations ? <th>Тип участка</th> : null}
@@ -726,13 +744,15 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
                   key={section.id}
                   className="group transition-colors hover:bg-[#f8faf8]"
                 >
-                  <td
-                    className={`px-3 py-4 text-sm font-medium wrap-break-word text-[#2c3934] transition-colors ${
-                      selectedColumn === "sectionName" ? "bg-[#eaf4ed]" : ""
-                    }`}
-                  >
-                    {section.section_name?.trim() || "-"}
-                  </td>
+                  {showSectionName ? (
+                    <td
+                      className={`px-3 py-4 text-sm font-medium wrap-break-word text-[#2c3934] transition-colors ${
+                        selectedColumn === "sectionName" ? "bg-[#eaf4ed]" : ""
+                      }`}
+                    >
+                      {section.section_name?.trim() || "-"}
+                    </td>
+                  ) : null}
                   <td
                     className={`px-3 py-4 text-center transition-colors ${
                       selectedColumn === "id" ? "bg-[#eaf4ed]" : ""
@@ -1044,15 +1064,17 @@ function JointCalculationCell({
 }
 
 function SectionsColumnWidths({
+  showSectionName,
   showOuterDiameter,
   showJointCalculations,
 }: {
+  showSectionName: boolean;
   showOuterDiameter: boolean;
   showJointCalculations: boolean;
 }) {
   return (
     <colgroup>
-      <col className="w-[260px]" />
+      {showSectionName ? <col className="w-[260px]" /> : null}
       <col className="w-[105px]" />
       {showJointCalculations ? <col className="w-[130px]" /> : null}
       {showJointCalculations ? <col className="w-[140px]" /> : null}
@@ -1083,11 +1105,13 @@ function SectionsColumnWidths({
 }
 
 function SectionsHeaderRow({
+  showSectionName,
   showOuterDiameter,
   showJointCalculations,
   selectedColumn,
   onSelect,
 }: {
+  showSectionName: boolean;
   showOuterDiameter: boolean;
   showJointCalculations: boolean;
   selectedColumn: SectionColumn | null;
@@ -1095,12 +1119,14 @@ function SectionsHeaderRow({
 }) {
   return (
     <tr className="bg-[#f6f8f6] text-sm font-semibold tracking-[-0.01em] text-[#17221f]">
-      <SectionColumnHeader
-        column="sectionName"
-        label="Название участка"
-        selectedColumn={selectedColumn}
-        onSelect={onSelect}
-      />
+      {showSectionName ? (
+        <SectionColumnHeader
+          column="sectionName"
+          label="Название участка"
+          selectedColumn={selectedColumn}
+          onSelect={onSelect}
+        />
+      ) : null}
       <SectionColumnHeader
         column="id"
         label="ID участка"
@@ -1433,6 +1459,39 @@ function formatNumber(value: number) {
 
 function formatNullableNumber(value: number | null) {
   return value === null ? "—" : formatNumber(value);
+}
+
+function NormalizedHeatLossSummary({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string;
+  value: number | null;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "" : "px-4 py-3"}>
+      <p className="text-[11px] font-bold tracking-[0.08em] text-[#66766e] uppercase">
+        {label}
+      </p>
+      {value === null ? (
+        <p
+          title="Для расчёта суммы необходимы qh, β и длина каждого участка"
+          className="mt-1 text-sm font-semibold text-[#a14c38]"
+        >
+          Недостаточно данных
+        </p>
+      ) : (
+        <p className="mt-1 text-lg font-bold text-[#245f4a] tabular-nums">
+          {formatNumber(value)}
+          <span className="ml-1 text-xs font-semibold text-[#718078]">
+            кДж/ч
+          </span>
+        </p>
+      )}
+    </div>
+  );
 }
 
 function calculateNormalizedHeatLossPerHour(section: NetworkSection) {

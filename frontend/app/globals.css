@@ -23,6 +23,13 @@ body {
   color: #153d2d;
 }
 
+input[type="month"]::-webkit-datetime-edit-month-field:focus,
+input[type="month"]::-webkit-datetime-edit-year-field:focus {
+  background-color: transparent;
+  color: inherit;
+  outline: none;
+}
+
 * {
   scrollbar-color: #b7c5bc transparent;
   scrollbar-width: thin;

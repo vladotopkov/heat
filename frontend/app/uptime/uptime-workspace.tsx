@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { MonthPicker } from "../_components/month-picker";
 import { SiteHeader } from "../_components/site-header";
 
 type UptimeRow = {
@@ -155,18 +156,12 @@ export function UptimeWorkspace({ initialMonth }: { initialMonth: string }) {
             
           </div>
 
-          <label className="w-full rounded-2xl border border-[#d8e2da] bg-white px-4 py-3 shadow-sm sm:w-60">
-            <span className="block text-[11px] font-bold tracking-[0.08em] text-[#64746c] uppercase">
-              Месяц
-            </span>
-            <input
-              type="month"
-              value={month}
-              disabled={savingID !== null}
-              onChange={(event) => setMonth(event.target.value)}
-              className="mt-1.5 w-full bg-transparent text-base font-semibold text-[#1d2b26] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </label>
+          <MonthPicker
+            label="Месяц"
+            value={month}
+            disabled={savingID !== null}
+            onChange={setMonth}
+          />
         </section>
 
         <section className="rounded-[22px] border border-[#dce4dd] bg-white shadow-[0_16px_45px_rgba(30,55,45,0.055)]">

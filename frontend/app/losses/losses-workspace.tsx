@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { MonthPicker } from "../_components/month-picker";
 import { SiteHeader } from "../_components/site-header";
 
 type LossRow = {
@@ -94,17 +95,12 @@ export function LossesWorkspace({ initialMonth }: { initialMonth: string }) {
            
           </div>
 
-          <label className="w-full shrink-0 rounded-2xl border border-[#d8e2da] bg-white px-4 py-3 shadow-sm sm:w-60">
-            <span className="block text-[11px] font-bold tracking-[0.08em] text-[#64746c] uppercase">
-              Расчётный месяц
-            </span>
-            <input
-              type="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-              className="mt-1.5 w-full bg-transparent text-base font-semibold text-[#1d2b26] outline-none"
-            />
-          </label>
+          <MonthPicker
+            label="Расчётный месяц"
+            value={month}
+            onChange={setMonth}
+            className="shrink-0"
+          />
         </section>
 
         <section className="rounded-[22px] border border-[#dce4dd] bg-white shadow-[0_16px_45px_rgba(30,55,45,0.055)]">
