@@ -11,19 +11,25 @@ import (
 )
 
 type repositoryStub struct {
-	section          domain.NetworkSection
-	values           []domain.QHValue
-	network          domain.HeatNetwork
-	networks         []domain.HeatNetwork
-	sections         []domain.NetworkSection
-	valuesByTable    map[int64][]domain.QHValue
-	betaValues       []domain.BetaValue
-	betaListRequests int
-	savedBetas       map[int64]float64
-	saveBetaErr      error
-	requestedSection int64
-	requestedTable   int64
-	tableRequests    map[int64]int
+	section             domain.NetworkSection
+	values              []domain.QHValue
+	network             domain.HeatNetwork
+	networks            []domain.HeatNetwork
+	sections            []domain.NetworkSection
+	valuesByTable       map[int64][]domain.QHValue
+	betaValues          []domain.BetaValue
+	betaListRequests    int
+	savedBetas          map[int64]float64
+	saveBetaErr         error
+	requestedSection    int64
+	requestedTable      int64
+	tableRequests       map[int64]int
+	monthlyTemperatures []domain.MonthlyTemperature
+	monthlyNetworkID    int64
+	requestedMonth      time.Time
+	uptimeHours         *int
+	uptimeNetworkID     int64
+	uptimeMonth         time.Time
 }
 
 func (stub *repositoryStub) ListBetaValues(
@@ -90,6 +96,26 @@ func (stub *repositoryStub) ListQHValuesByTableID(
 	}
 
 	return stub.values, nil
+}
+
+func (stub *repositoryStub) ListTemperaturesForMonth(
+	_ context.Context,
+	heatNetworkID int64,
+	month time.Time,
+) ([]domain.MonthlyTemperature, error) {
+	stub.monthlyNetworkID = heatNetworkID
+	stub.requestedMonth = month
+	return stub.monthlyTemperatures, nil
+}
+
+func (stub *repositoryStub) GetUptimeHoursForMonth(
+	_ context.Context,
+	heatNetworkID int64,
+	month time.Time,
+) (*int, error) {
+	stub.uptimeNetworkID = heatNetworkID
+	stub.uptimeMonth = month
+	return stub.uptimeHours, nil
 }
 
 func TestListNetworkSectionsLoadsQHValuesOncePerTable(t *testing.T) {

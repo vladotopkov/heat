@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	nethttp "net/http"
 	"strconv"
+	"time"
 
 	"lostHeat/internal/sectionqh/domain"
 )
@@ -19,6 +20,12 @@ type Service interface {
 	ListNetworkSections(
 		ctx context.Context,
 		heatNetworkID int64,
+	) (domain.HeatNetworkSections, error)
+
+	ListNetworkSectionsForMonth(
+		ctx context.Context,
+		heatNetworkID int64,
+		month time.Time,
 	) (domain.HeatNetworkSections, error)
 
 	GetQHValue(
@@ -58,7 +65,23 @@ func (h *Handler) ListNetworkSections(
 		return
 	}
 
-	sections, err := h.service.ListNetworkSections(r.Context(), id)
+	var sections domain.HeatNetworkSections
+	var err error
+	monthValue := r.URL.Query().Get("month")
+	if monthValue == "" {
+		sections, err = h.service.ListNetworkSections(r.Context(), id)
+	} else {
+		month, parseErr := time.Parse("2006-01", monthValue)
+		if parseErr != nil {
+			writeJSON(
+				w,
+				nethttp.StatusBadRequest,
+				errorResponse{Error: "month must use YYYY-MM format"},
+			)
+			return
+		}
+		sections, err = h.service.ListNetworkSectionsForMonth(r.Context(), id, month)
+	}
 	if err != nil {
 		h.writeServiceError(w, err)
 		return

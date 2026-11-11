@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,6 +29,7 @@ func (r *Repository) ListHeatNetworks(
 			name,
 			project_supply_temperature_c::double precision,
 			project_return_temperature_c::double precision,
+			project_ground_temperature_c::double precision,
 			gvs_project_supply_temperature_c::double precision,
 			gvs_project_circulation_temperature_c::double precision
 		FROM public."HeatNetwork"
@@ -50,6 +52,7 @@ func (r *Repository) ListHeatNetworks(
 			&network.Name,
 			&network.ProjectSupplyTemperature,
 			&network.ProjectReturnTemperature,
+			&network.ProjectGroundTemperature,
 			&network.GVSProjectSupplyTemperature,
 			&network.GVSProjectCirculationTemperature,
 		); err != nil {
@@ -76,6 +79,7 @@ func (r *Repository) GetHeatNetwork(
 			name,
 			project_supply_temperature_c::double precision,
 			project_return_temperature_c::double precision,
+			project_ground_temperature_c::double precision,
 			gvs_project_supply_temperature_c::double precision,
 			gvs_project_circulation_temperature_c::double precision
 		FROM public."HeatNetwork"
@@ -89,6 +93,7 @@ func (r *Repository) GetHeatNetwork(
 		&network.Name,
 		&network.ProjectSupplyTemperature,
 		&network.ProjectReturnTemperature,
+		&network.ProjectGroundTemperature,
 		&network.GVSProjectSupplyTemperature,
 		&network.GVSProjectCirculationTemperature,
 	)
@@ -138,9 +143,14 @@ func (r *Repository) GetNetworkSection(
 			ns.beta::double precision,
 			ns.network_type,
 			ns.joint_channel_id,
-			ns.section_name
+			ns.section_name,
+			jc.height_m::double precision,
+			jc.width_m::double precision,
+			jc.cover_thickness_m::double precision,
+			jc.ground_lambda::double precision
 		FROM public."NetworkSection" AS ns
 		JOIN public.qh_tables AS qt ON qt.id = ns.qh_table_id
+		LEFT JOIN public."JointChannel" AS jc ON jc.id = ns.joint_channel_id
 		WHERE ns.id = $1
 	`
 
@@ -196,9 +206,14 @@ func (r *Repository) ListNetworkSectionsByHeatNetworkID(
 			ns.beta::double precision,
 			ns.network_type,
 			ns.joint_channel_id,
-			ns.section_name
+			ns.section_name,
+			jc.height_m::double precision,
+			jc.width_m::double precision,
+			jc.cover_thickness_m::double precision,
+			jc.ground_lambda::double precision
 		FROM public."NetworkSection" AS ns
 		JOIN public.qh_tables AS qt ON qt.id = ns.qh_table_id
+		LEFT JOIN public."JointChannel" AS jc ON jc.id = ns.joint_channel_id
 		WHERE ns.heat_network_id = $1
 		ORDER BY ns.id
 	`
@@ -272,6 +287,10 @@ func scanNetworkSection(
 		&section.NetworkType,
 		&section.JointChannelID,
 		&section.SectionName,
+		&section.JointChannelHeightM,
+		&section.JointChannelWidthM,
+		&section.JointChannelCoverThicknessM,
+		&section.JointChannelGroundLambda,
 	)
 }
 
@@ -452,4 +471,94 @@ func (r *Repository) ListQHValuesByTableID(
 	}
 
 	return values, nil
+}
+
+func (r *Repository) ListTemperaturesForMonth(
+	ctx context.Context,
+	heatNetworkID int64,
+	month time.Time,
+) ([]domain.MonthlyTemperature, error) {
+	const query = `
+		SELECT
+			heat_network_id,
+			month,
+			network_type,
+			supply_t::double precision,
+			return_t::double precision,
+			ground_t::double precision
+		FROM public.temperatures
+		WHERE heat_network_id = $1
+			AND month = $2::date
+			AND network_type IN ('HEATING', 'GVS')
+		ORDER BY network_type
+	`
+
+	rows, err := r.pool.Query(ctx, query, heatNetworkID, month)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"list temperatures for heat_network_id=%d, month=%s: %w",
+			heatNetworkID,
+			month.Format("2006-01"),
+			err,
+		)
+	}
+	defer rows.Close()
+
+	result := make([]domain.MonthlyTemperature, 0)
+	for rows.Next() {
+		var row domain.MonthlyTemperature
+		if err := rows.Scan(
+			&row.HeatNetworkID,
+			&row.Month,
+			&row.NetworkType,
+			&row.Supply,
+			&row.Return,
+			&row.Ground,
+		); err != nil {
+			return nil, fmt.Errorf(
+				"scan temperatures for heat_network_id=%d: %w",
+				heatNetworkID,
+				err,
+			)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(
+			"iterate temperatures for heat_network_id=%d: %w",
+			heatNetworkID,
+			err,
+		)
+	}
+
+	return result, nil
+}
+
+func (r *Repository) GetUptimeHoursForMonth(
+	ctx context.Context,
+	heatNetworkID int64,
+	month time.Time,
+) (*int, error) {
+	const query = `
+		SELECT hours_per_month
+		FROM public.up_time
+		WHERE heat_network_id = $1
+			AND month = $2::date
+	`
+
+	var hours int
+	err := r.pool.QueryRow(ctx, query, heatNetworkID, month).Scan(&hours)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get uptime for heat_network_id=%d, month=%s: %w",
+			heatNetworkID,
+			month.Format("2006-01"),
+			err,
+		)
+	}
+
+	return &hours, nil
 }

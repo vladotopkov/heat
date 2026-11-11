@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"lostHeat/internal/sectionqh/domain"
 )
@@ -42,6 +43,18 @@ type Repository interface {
 		ctx context.Context,
 		qhTableID int64,
 	) ([]domain.QHValue, error)
+
+	ListTemperaturesForMonth(
+		ctx context.Context,
+		heatNetworkID int64,
+		month time.Time,
+	) ([]domain.MonthlyTemperature, error)
+
+	GetUptimeHoursForMonth(
+		ctx context.Context,
+		heatNetworkID int64,
+		month time.Time,
+	) (*int, error)
 }
 
 type Service struct {
@@ -69,6 +82,27 @@ func (s *Service) ListNetworkSections(
 	ctx context.Context,
 	heatNetworkID int64,
 ) (domain.HeatNetworkSections, error) {
+	return s.listNetworkSections(ctx, heatNetworkID, nil)
+}
+
+func (s *Service) ListNetworkSectionsForMonth(
+	ctx context.Context,
+	heatNetworkID int64,
+	month time.Time,
+) (domain.HeatNetworkSections, error) {
+	month, err := normalizeCalculationMonth(month)
+	if err != nil {
+		return domain.HeatNetworkSections{}, err
+	}
+
+	return s.listNetworkSections(ctx, heatNetworkID, &month)
+}
+
+func (s *Service) listNetworkSections(
+	ctx context.Context,
+	heatNetworkID int64,
+	month *time.Time,
+) (domain.HeatNetworkSections, error) {
 	network, err := s.repository.GetHeatNetwork(ctx, heatNetworkID)
 	if err != nil {
 		return domain.HeatNetworkSections{}, err
@@ -85,9 +119,9 @@ func (s *Service) ListNetworkSections(
 			err,
 		)
 	}
-
 	result := domain.HeatNetworkSections{
-		HeatNetwork: network,
+		HeatNetwork:      network,
+		CalculationMonth: month,
 		Sections: make(
 			[]domain.NetworkSectionWithQH,
 			0,
@@ -112,6 +146,42 @@ func (s *Service) ListNetworkSections(
 		}
 	}
 	valuesByTableID := make(map[int64][]domain.QHValue)
+	if network.ID == militaryTownHeatNetworkID {
+		for _, section := range sections {
+			if section.JointChannelID == nil {
+				continue
+			}
+			if _, loaded := valuesByTableID[section.QHTableID]; loaded {
+				continue
+			}
+			values, loadErr := s.repository.ListQHValuesByTableID(
+				ctx,
+				section.QHTableID,
+			)
+			if loadErr != nil {
+				return domain.HeatNetworkSections{}, loadErr
+			}
+			valuesByTableID[section.QHTableID] = values
+		}
+		result.JointChannels, err = s.calculateJointChannelDisplayCalculations(
+			ctx,
+			network,
+			sections,
+			valuesByTableID,
+			month,
+		)
+		if err != nil {
+			return domain.HeatNetworkSections{}, fmt.Errorf(
+				"calculate joint channels: %w",
+				err,
+			)
+		}
+	}
+	jointCalculationsByID := make(map[int64]*domain.JointChannelCalculation)
+	for index := range result.JointChannels {
+		calculation := &result.JointChannels[index]
+		jointCalculationsByID[calculation.ID] = calculation
+	}
 
 	for _, section := range sections {
 		values, loaded := valuesByTableID[section.QHTableID]
@@ -131,6 +201,9 @@ func (s *Service) ListNetworkSections(
 		value, _, selectionErr := selectNetworkSectionValue(network, section, values)
 		sectionResult := domain.NetworkSectionWithQH{
 			Section: section,
+		}
+		if section.JointChannelID != nil {
+			sectionResult.JointCalculation = jointCalculationsByID[*section.JointChannelID]
 		}
 		var selectedQHValue *domain.QHValue
 

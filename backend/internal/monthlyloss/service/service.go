@@ -23,6 +23,12 @@ type NormalizedHeatLossProvider interface {
 		ctx context.Context,
 		heatNetworkID int64,
 	) (total float64, unavailableReason *string, err error)
+
+	TotalHeatLossForMonth(
+		ctx context.Context,
+		heatNetworkID int64,
+		month time.Time,
+	) (totalGJ float64, unavailableReason *string, err error)
 }
 
 type Service struct {
@@ -83,6 +89,23 @@ func (s *Service) calculateNetworkLoss(
 		HeatNetworkID:   input.HeatNetworkID,
 		HeatNetworkName: input.HeatNetworkName,
 		Month:           input.Month,
+	}
+
+	if input.HeatNetworkID == 2 {
+		totalGJ, unavailableReason, err :=
+			s.normalizedHeatLossProvider.TotalHeatLossForMonth(
+				ctx,
+				input.HeatNetworkID,
+				input.Month,
+			)
+		if err != nil {
+			return domain.NetworkLoss{}, err
+		}
+		if unavailableReason != nil {
+			return unavailable(result, *unavailableReason), nil
+		}
+		result.LossGJ = floatPointer(totalGJ)
+		return result, nil
 	}
 
 	if input.ActualSupply == nil ||

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"lostHeat/internal/sectionqh/domain"
 )
@@ -27,6 +28,14 @@ func (stub serviceStub) ListHeatNetworks(
 func (stub serviceStub) ListNetworkSections(
 	_ context.Context,
 	_ int64,
+) (domain.HeatNetworkSections, error) {
+	return domain.HeatNetworkSections{}, stub.err
+}
+
+func (stub serviceStub) ListNetworkSectionsForMonth(
+	_ context.Context,
+	_ int64,
+	_ time.Time,
 ) (domain.HeatNetworkSections, error) {
 	return domain.HeatNetworkSections{}, stub.err
 }

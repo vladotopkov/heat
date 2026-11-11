@@ -32,6 +32,31 @@ type NetworkSection = {
   qh_error?: string;
   beta: number | null;
   beta_error?: string;
+  q1n: number | null;
+  q2n: number | null;
+  q3n: number | null;
+  q4n: number | null;
+  r1_norm: number | null;
+  r2_norm: number | null;
+  r3_norm: number | null;
+  r4_norm: number | null;
+  q1_norm_period: number | null;
+  q2_norm_period: number | null;
+  q3_norm_period: number | null;
+  q4_norm_period: number | null;
+  Q_supply_norm_period: number | null;
+  Q_return_norm_period: number | null;
+  joint_calculation_error?: string;
+};
+
+type JointChannel = {
+  id: number;
+  rkgr: number | null;
+  rv_k: number | null;
+  rkan: number | null;
+  tau_channel: number | null;
+  tau_channel_period: number | null;
+  calculation_error?: string;
 };
 
 type HeatNetworksResponse = {
@@ -40,8 +65,12 @@ type HeatNetworksResponse = {
 
 type NetworkSectionsResponse = {
   heat_network: HeatNetwork;
+  calculation_month: string | null;
+  joint_channels: JointChannel[];
   sections: NetworkSection[];
 };
+
+type MilitaryTownView = "joint" | "separate";
 
 type ErrorResponse = {
   error?: string;
@@ -50,6 +79,8 @@ type ErrorResponse = {
 type SectionColumn =
   | "sectionName"
   | "id"
+  | "jointChannelId"
+  | "networkType"
   | "supplyOuterDiameter"
   | "layingType"
   | "undergroundLayingType"
@@ -59,7 +90,15 @@ type SectionColumn =
   | "projectDate"
   | "qh"
   | "beta"
-  | "normalizedHeatLossPerHour";
+  | "normalizedHeatLossPerHour"
+  | "jointQSupply"
+  | "jointQReturn"
+  | "jointRSupply"
+  | "jointRReturn"
+  | "jointPeriodQSupply"
+  | "jointPeriodQReturn"
+  | "jointPeriodLossSupply"
+  | "jointPeriodLossReturn";
 
 const numberFormatter = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 3,
@@ -69,6 +108,12 @@ const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
+});
+
+const monthFormatter = new Intl.DateTimeFormat("ru-RU", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
 });
 
 const betaFormatter = new Intl.NumberFormat("ru-RU", {
@@ -87,6 +132,11 @@ export function TablesWorkspace() {
     useState<NetworkSectionsResponse | null>(null);
   const [sectionsLoading, setSectionsLoading] = useState(false);
   const [sectionsError, setSectionsError] = useState<string | null>(null);
+  const [militaryTownView, setMilitaryTownView] =
+    useState<MilitaryTownView>("joint");
+  const [calculationMonth, setCalculationMonth] = useState(() =>
+    currentMonthInMinsk(),
+  );
   const sectionsRequest = useRef<AbortController | null>(null);
 
   async function reloadNetworks() {
@@ -135,7 +185,7 @@ export function TablesWorkspace() {
     return () => sectionsRequest.current?.abort();
   }, []);
 
-  async function selectNetwork(network: HeatNetwork) {
+  async function loadSections(network: HeatNetwork, month = calculationMonth) {
     sectionsRequest.current?.abort();
     const controller = new AbortController();
     sectionsRequest.current = controller;
@@ -147,7 +197,9 @@ export function TablesWorkspace() {
 
     try {
       const response = await requestJSON<NetworkSectionsResponse>(
-        `/api/heat-networks/${network.id}/sections`,
+        `/api/heat-networks/${network.id}/sections${
+          network.id === 2 ? `?month=${encodeURIComponent(month)}` : ""
+        }`,
         controller.signal,
       );
       setSectionsData(response);
@@ -160,6 +212,18 @@ export function TablesWorkspace() {
         setSectionsLoading(false);
       }
     }
+  }
+
+  async function selectNetwork(network: HeatNetwork) {
+    if (network.id === 2) setMilitaryTownView("joint");
+    await loadSections(network);
+  }
+
+  function changeCalculationMonth(month: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
+    setCalculationMonth(month);
+    const network = networks.find((item) => item.id === selectedNetworkID);
+    if (network?.id === 2) void loadSections(network, month);
   }
 
   return (
@@ -242,6 +306,57 @@ export function TablesWorkspace() {
                   })}
                 </div>
               )}
+
+              {selectedNetworkID === 2 ? (
+                <div className="mt-4 flex flex-col gap-4 border-t border-[#e4e9e5] px-1 pt-4 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-[#66766e]">
+                      Вид прокладки
+                    </p>
+                    <div
+                      role="group"
+                      aria-label="Вид прокладки"
+                      className="inline-flex rounded-2xl bg-[#edf2ee] p-1"
+                    >
+                      {([
+                        ["joint", "Совместно"],
+                        ["separate", "Раздельно"],
+                      ] as const).map(([value, label]) => {
+                        const selected = militaryTownView === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setMilitaryTownView(value)}
+                            className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#245f4a] ${
+                              selected
+                                ? "bg-[#245f4a] text-white shadow-sm"
+                                : "text-[#526159] hover:bg-white"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <label className="block sm:w-56">
+                    <span className="mb-2 block text-xs font-semibold text-[#66766e]">
+                      Расчётный месяц
+                    </span>
+                    <input
+                      type="month"
+                      value={calculationMonth}
+                      onChange={(event) =>
+                        changeCalculationMonth(event.target.value)
+                      }
+                      className="h-11 w-full rounded-xl border border-[#cfd9d1] bg-white px-3 text-sm font-semibold text-[#24322d] outline-none transition focus:border-[#39715b] focus:ring-2 focus:ring-[#39715b]/15"
+                    />
+                  </label>
+                </div>
+              ) : null}
             </div>
           </section>
 
@@ -277,12 +392,112 @@ export function TablesWorkspace() {
                 </div>
               </section>
             ) : sectionsData ? (
-              <SectionsTable data={sectionsData} />
+              selectedNetworkID === 2 && militaryTownView === "joint" ? (
+                <JointChannelsTable data={sectionsData} />
+              ) : (
+                <SectionsTable data={sectionsData} />
+              )
             ) : null}
           </section>
         </div>
       </div>
     </main>
+  );
+}
+
+function JointChannelsTable({ data }: { data: NetworkSectionsResponse }) {
+  return (
+    <section className="overflow-hidden rounded-[22px] border border-[#dce4dd] bg-white shadow-[0_16px_45px_rgba(30,55,45,0.055)]">
+      <div className="border-b border-[#e2e8e3] px-5 py-5 sm:px-6">
+        <div className="flex items-center gap-2 text-xs font-semibold text-[#39715b]">
+          <span className="size-1.5 rounded-full bg-[#3b8c69]" />
+          Совместно проложенные трубопроводы
+        </div>
+        <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.035em]">
+          {data.heat_network.name}
+        </h2>
+        <p className="mt-1 text-sm text-[#718078]">
+          Расчётный период: {formatMonth(data.calculation_month)}
+        </p>
+      </div>
+
+      {data.joint_channels.length === 0 ? (
+        <div className="grid min-h-[280px] place-items-center px-6 py-12 text-center text-sm text-[#718078]">
+          Для этой теплосети совместные каналы не найдены.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-[#dfe6e0] bg-[#f6f8f6] text-sm font-semibold text-[#17221f]">
+                <JointHeader label="ID канала" />
+                <JointHeader label="ID участков" />
+                <JointHeader label="Rкгр" unit="м·°C/Вт" />
+                <JointHeader label="R в.к." unit="м·°C/Вт" />
+                <JointHeader label="R кан." unit="м·°C/Вт" />
+                <JointHeader label="tau_channel" unit="°C" />
+                <JointHeader label="tau_channel_period" unit="°C" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e8ede9]">
+              {data.joint_channels.map((channel) => (
+                <tr
+                  key={channel.id}
+                  className="transition-colors hover:bg-[#f8faf8]"
+                >
+                  <td className="px-5 py-4 text-center">
+                    <span className="inline-flex rounded-lg bg-[#edf3ef] px-2.5 py-1.5 text-xs font-bold text-[#356851] tabular-nums">
+                      #{channel.id}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 text-center text-sm font-semibold text-[#526159] tabular-nums">
+                    {data.sections
+                      .filter(
+                        (section) => section.joint_channel_id === channel.id,
+                      )
+                      .map((section) => section.id)
+                      .sort((left, right) => left - right)
+                      .join(", ") || "—"}
+                  </td>
+                  {([
+                    channel.rkgr,
+                    channel.rv_k,
+                    channel.rkan,
+                    channel.tau_channel,
+                    channel.tau_channel_period,
+                  ] as const).map((value, index) => (
+                    <td
+                      key={index}
+                      title={value === null ? channel.calculation_error : undefined}
+                      className="px-5 py-4 text-center text-sm font-semibold text-[#2c3934] tabular-nums"
+                    >
+                      {value === null ? (
+                        <span className="text-[#9a4c3b]">—</span>
+                      ) : (
+                        formatNumber(value)
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function JointHeader({ label, unit }: { label: string; unit?: string }) {
+  return (
+    <th scope="col" className="px-5 py-4 text-center">
+      {label}
+      {unit ? (
+        <span className="mt-0.5 block text-[11px] font-medium text-[#66766e]">
+          {unit}
+        </span>
+      ) : null}
+    </th>
   );
 }
 
@@ -303,7 +518,14 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
   const totalNormalizedHeatLossPerHour =
     calculateTotalNormalizedHeatLossPerHour(data.sections);
   const showOuterDiameter = data.heat_network.name === "Еремичи";
-  const tableClassName = `${showOuterDiameter ? "w-[1745px]" : "w-[1600px]"} table-fixed border-collapse text-left`;
+  const showJointCalculations = data.heat_network.id === 2;
+  const tableClassName = `${
+    showJointCalculations
+      ? "w-[3320px]"
+      : showOuterDiameter
+        ? "w-[1745px]"
+        : "w-[1600px]"
+  } table-fixed border-collapse text-left`;
 
   function toggleColumn(column: SectionColumn) {
     setSelectedColumn((current) => (current === column ? null : column));
@@ -396,10 +618,14 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
           <div className="sticky top-0 z-30 overflow-hidden border-y border-[#dfe6e0] bg-[#f6f8f6] shadow-[0_8px_18px_rgba(28,52,43,0.12)]">
             <div ref={stickyHeaderTrack} className="will-change-transform">
               <table className={tableClassName}>
-                <SectionsColumnWidths showOuterDiameter={showOuterDiameter} />
+                <SectionsColumnWidths
+                  showOuterDiameter={showOuterDiameter}
+                  showJointCalculations={showJointCalculations}
+                />
                 <thead>
                   <SectionsHeaderRow
                     showOuterDiameter={showOuterDiameter}
+                    showJointCalculations={showJointCalculations}
                     selectedColumn={selectedColumn}
                     onSelect={toggleColumn}
                   />
@@ -421,11 +647,16 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
             }
           >
           <table className={tableClassName}>
-            <SectionsColumnWidths showOuterDiameter={showOuterDiameter} />
+            <SectionsColumnWidths
+              showOuterDiameter={showOuterDiameter}
+              showJointCalculations={showJointCalculations}
+            />
             <thead className="sr-only">
               <tr className="border-b border-[#dfe6e0] bg-[#f6f8f6] text-[11px] font-bold tracking-[0.065em] text-[#66766e] uppercase">
                 <th className="px-3 py-4">Название участка</th>
                 <th className="w-28 px-5 py-4 sm:px-6">ID участка</th>
+                {showJointCalculations ? <th>ID канала</th> : null}
+                {showJointCalculations ? <th>Тип участка</th> : null}
                 {showOuterDiameter ? (
                   <th scope="col" className="px-4 py-4 text-center">
                     Наружный диаметр
@@ -440,6 +671,18 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
                     Вт/м
                   </span>
                 </th>
+                {showJointCalculations ? (
+                  <>
+                    <th>qh подз. 1Н / 3Н</th>
+                    <th>qh подз. 2Н / 4Н</th>
+                    <th>R1_norm / R3_norm</th>
+                    <th>R2_norm / R4_norm</th>
+                    <th>q1_norm_period / q3_norm_period</th>
+                    <th>q2_norm_period / q4_norm_period</th>
+                    <th>Q_supply_norm_period</th>
+                    <th>Q_return_norm_period</th>
+                  </>
+                ) : null}
                 <th className="min-w-28 px-5 py-4 text-right sm:px-6">
                   β
                   <span className="mt-0.5 block font-medium tracking-normal text-[#95a199] normal-case">
@@ -499,6 +742,46 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
                       #{section.id}
                     </span>
                   </td>
+                  {showJointCalculations ? (
+                    <td
+                      className={`px-3 py-4 text-center transition-colors ${
+                        selectedColumn === "jointChannelId"
+                          ? "bg-[#eaf4ed]"
+                          : ""
+                      }`}
+                    >
+                      {section.joint_channel_id === null ? (
+                        <span className="text-sm text-[#8a9790]">—</span>
+                      ) : (
+                        <span className="inline-flex rounded-lg bg-[#eef0f8] px-2.5 py-1.5 text-xs font-bold text-[#4b5f8a] tabular-nums">
+                          #{section.joint_channel_id}
+                        </span>
+                      )}
+                    </td>
+                  ) : null}
+                  {showJointCalculations ? (
+                    <td
+                      className={`px-3 py-4 text-center transition-colors ${
+                        selectedColumn === "networkType"
+                          ? "bg-[#eaf4ed]"
+                          : ""
+                      }`}
+                    >
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${
+                          section.network_type === "GVS"
+                            ? "bg-[#e9f1f8] text-[#35658a]"
+                            : "bg-[#f8eee3] text-[#8a5b2f]"
+                        }`}
+                      >
+                        {section.network_type === "GVS"
+                          ? "ГВС"
+                          : section.network_type === "HEATING"
+                            ? "Отопление"
+                            : section.network_type}
+                      </span>
+                    </td>
+                  ) : null}
                   {showOuterDiameter ? (
                     <td
                       className={`px-3 py-4 text-center text-sm font-medium tabular-nums transition-colors ${
@@ -535,6 +818,98 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
                       </span>
                     )}
                   </td>
+                  {showJointCalculations ? (
+                    <>
+                      <JointCalculationCell
+                        value={
+                          section.network_type === "HEATING"
+                            ? section.q1n
+                            : section.q3n
+                        }
+                        label={section.network_type === "HEATING" ? "q1n" : "q3n"}
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointQSupply"}
+                      />
+                      <JointCalculationCell
+                        value={
+                          section.network_type === "HEATING"
+                            ? section.q2n
+                            : section.q4n
+                        }
+                        label={section.network_type === "HEATING" ? "q2n" : "q4n"}
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointQReturn"}
+                      />
+                      <JointCalculationCell
+                        value={
+                          section.network_type === "HEATING"
+                            ? section.r1_norm
+                            : section.r3_norm
+                        }
+                        label={
+                          section.network_type === "HEATING"
+                            ? "R1_norm"
+                            : "R3_norm"
+                        }
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointRSupply"}
+                      />
+                      <JointCalculationCell
+                        value={
+                          section.network_type === "HEATING"
+                            ? section.r2_norm
+                            : section.r4_norm
+                        }
+                        label={
+                          section.network_type === "HEATING"
+                            ? "R2_norm"
+                            : "R4_norm"
+                        }
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointRReturn"}
+                      />
+                      <JointCalculationCell
+                        value={
+                          section.network_type === "HEATING"
+                            ? section.q1_norm_period
+                            : section.q3_norm_period
+                        }
+                        label={
+                          section.network_type === "HEATING"
+                            ? "q1_norm_period"
+                            : "q3_norm_period"
+                        }
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointPeriodQSupply"}
+                      />
+                      <JointCalculationCell
+                        value={
+                          section.network_type === "HEATING"
+                            ? section.q2_norm_period
+                            : section.q4_norm_period
+                        }
+                        label={
+                          section.network_type === "HEATING"
+                            ? "q2_norm_period"
+                            : "q4_norm_period"
+                        }
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointPeriodQReturn"}
+                      />
+                      <JointCalculationCell
+                        value={section.Q_supply_norm_period}
+                        label="Q_supply_norm_period"
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointPeriodLossSupply"}
+                      />
+                      <JointCalculationCell
+                        value={section.Q_return_norm_period}
+                        label="Q_return_norm_period"
+                        error={section.joint_calculation_error}
+                        selected={selectedColumn === "jointPeriodLossReturn"}
+                      />
+                    </>
+                  ) : null}
                   <td
                     className={`px-3 py-4 text-center transition-colors ${
                       selectedColumn === "beta" ? "bg-[#eaf4ed]" : ""
@@ -636,17 +1011,65 @@ function SectionsTable({ data }: { data: NetworkSectionsResponse }) {
   );
 }
 
+function JointCalculationCell({
+  value,
+  label,
+  error,
+  selected,
+}: {
+  value: number | null;
+  label: string;
+  error?: string;
+  selected: boolean;
+}) {
+  return (
+    <td
+      title={value === null ? error : label}
+      className={`px-3 py-4 text-center transition-colors ${
+        selected ? "bg-[#eaf4ed]" : ""
+      }`}
+    >
+      <span className="mb-1 block text-[10px] font-bold tracking-[0.04em] text-[#718078]">
+        {label}
+      </span>
+      {value === null ? (
+        <span className={error ? "text-[#9a4c3b]" : "text-[#8a9790]"}>—</span>
+      ) : (
+        <span className="text-sm font-semibold text-[#2c3934] tabular-nums">
+          {formatNumber(value)}
+        </span>
+      )}
+    </td>
+  );
+}
+
 function SectionsColumnWidths({
   showOuterDiameter,
+  showJointCalculations,
 }: {
   showOuterDiameter: boolean;
+  showJointCalculations: boolean;
 }) {
   return (
     <colgroup>
       <col className="w-[260px]" />
       <col className="w-[105px]" />
+      {showJointCalculations ? <col className="w-[130px]" /> : null}
+      {showJointCalculations ? <col className="w-[140px]" /> : null}
       {showOuterDiameter ? <col className="w-[145px]" /> : null}
       <col className="w-[115px]" />
+      {showJointCalculations ? (
+        <>
+          <col className="w-[160px]" />
+          <col className="w-[160px]" />
+          <col className="w-[175px]" />
+          <col className="w-[175px]" />
+          <col className="w-[190px]" />
+          <col className="w-[190px]" />
+          <col className="w-[200px]" />
+          <col className="w-[200px]" />
+        </>
+      ) : null}
       <col className="w-[115px]" />
       <col className="w-[140px]" />
       <col className="w-[145px]" />
@@ -661,10 +1084,12 @@ function SectionsColumnWidths({
 
 function SectionsHeaderRow({
   showOuterDiameter,
+  showJointCalculations,
   selectedColumn,
   onSelect,
 }: {
   showOuterDiameter: boolean;
+  showJointCalculations: boolean;
   selectedColumn: SectionColumn | null;
   onSelect: (column: SectionColumn) => void;
 }) {
@@ -682,6 +1107,22 @@ function SectionsHeaderRow({
         selectedColumn={selectedColumn}
         onSelect={onSelect}
       />
+      {showJointCalculations ? (
+        <SectionColumnHeader
+          column="jointChannelId"
+          label="ID канала"
+          selectedColumn={selectedColumn}
+          onSelect={onSelect}
+        />
+      ) : null}
+      {showJointCalculations ? (
+        <SectionColumnHeader
+          column="networkType"
+          label="Тип участка"
+          selectedColumn={selectedColumn}
+          onSelect={onSelect}
+        />
+      ) : null}
       {showOuterDiameter ? (
         <SectionColumnHeader
           column="supplyOuterDiameter"
@@ -698,6 +1139,66 @@ function SectionsHeaderRow({
         selectedColumn={selectedColumn}
         onSelect={onSelect}
       />
+      {showJointCalculations ? (
+        <>
+          <SectionColumnHeader
+            column="jointQSupply"
+            label="qh подз. 1Н / 3Н"
+            unit="подача, Вт/м"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointQReturn"
+            label="qh подз. 2Н / 4Н"
+            unit="обратка / циркуляция, Вт/м"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointRSupply"
+            label="R1_norm / R3_norm"
+            unit="подача, м·°C/Вт"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointRReturn"
+            label="R2_norm / R4_norm"
+            unit="обратка / циркуляция, м·°C/Вт"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointPeriodQSupply"
+            label="q1_norm_period / q3_norm_period"
+            unit="подача, Вт/м"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointPeriodQReturn"
+            label="q2_norm_period / q4_norm_period"
+            unit="обратка / циркуляция, Вт/м"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointPeriodLossSupply"
+            label="Q_supply_norm_period"
+            unit="подача, ГДж/месяц"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+          <SectionColumnHeader
+            column="jointPeriodLossReturn"
+            label="Q_return_norm_period"
+            unit="обратка / циркуляция, ГДж/месяц"
+            selectedColumn={selectedColumn}
+            onSelect={onSelect}
+          />
+        </>
+      ) : null}
       <SectionColumnHeader
         column="beta"
         label="β"
@@ -903,6 +1404,23 @@ async function requestJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   }
 
   return body;
+}
+
+function currentMonthInMinsk() {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Minsk",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  return year && month ? `${year}-${month}` : new Date().toISOString().slice(0, 7);
+}
+
+function formatMonth(value: string | null) {
+  if (!value || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return "—";
+  const [year, month] = value.split("-").map(Number);
+  return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
 function displayText(value: string | null) {

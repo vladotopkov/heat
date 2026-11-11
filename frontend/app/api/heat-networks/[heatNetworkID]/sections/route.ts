@@ -1,7 +1,7 @@
 import { proxyBackendGet } from "../../../_shared/backend";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ heatNetworkID: string }> },
 ) {
   const { heatNetworkID } = await params;
@@ -13,7 +13,16 @@ export async function GET(
     );
   }
 
+  const month = new URL(request.url).searchParams.get("month");
+  if (month !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return Response.json(
+      { error: "Месяц должен быть указан в формате ГГГГ-ММ" },
+      { status: 400 },
+    );
+  }
+
+  const query = month === null ? "" : `?month=${encodeURIComponent(month)}`;
   return proxyBackendGet(
-    `/api/v1/heat-networks/${heatNetworkID}/sections`,
+    `/api/v1/heat-networks/${heatNetworkID}/sections${query}`,
   );
 }

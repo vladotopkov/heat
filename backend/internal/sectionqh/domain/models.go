@@ -19,8 +19,18 @@ type HeatNetwork struct {
 	Name                             string
 	ProjectSupplyTemperature         *float64
 	ProjectReturnTemperature         *float64
+	ProjectGroundTemperature         *float64
 	GVSProjectSupplyTemperature      *float64
 	GVSProjectCirculationTemperature *float64
+}
+
+type MonthlyTemperature struct {
+	HeatNetworkID int64
+	Month         time.Time
+	NetworkType   string
+	Supply        *float64
+	Return        *float64
+	Ground        *float64
 }
 
 // NetworkSection contains only the section characteristics which have a
@@ -34,6 +44,11 @@ type NetworkSection struct {
 	NetworkType    string
 	JointChannelID *int64
 	SectionName    *string
+
+	JointChannelHeightM         *float64
+	JointChannelWidthM          *float64
+	JointChannelCoverThicknessM *float64
+	JointChannelGroundLambda    *float64
 
 	LayingType            *string
 	UndergroundLayingType *string
@@ -112,14 +127,45 @@ type Match struct {
 }
 
 type NetworkSectionWithQH struct {
-	Section   NetworkSection
-	QHValue   *QHValue
-	QHError   *string
-	Beta      *BetaValue
-	BetaError *string
+	Section          NetworkSection
+	QHValue          *QHValue
+	QHError          *string
+	Beta             *BetaValue
+	BetaError        *string
+	JointCalculation *JointChannelCalculation
 }
 
 type HeatNetworkSections struct {
-	HeatNetwork HeatNetwork
-	Sections    []NetworkSectionWithQH
+	HeatNetwork      HeatNetwork
+	Sections         []NetworkSectionWithQH
+	JointChannels    []JointChannelCalculation
+	CalculationMonth *time.Time
+}
+
+// JointChannelCalculation contains request-local intermediate values for one
+// physical channel. None of these values are persisted in the database.
+type JointChannelCalculation struct {
+	ID                   int64
+	Rkgr                 *float64
+	RvK                  *float64
+	Rkan                 *float64
+	TauChannel           *float64
+	TauChannelPeriod     *float64
+	Q1N                  *float64
+	Q2N                  *float64
+	Q3N                  *float64
+	Q4N                  *float64
+	R1Norm               *float64
+	R2Norm               *float64
+	R3Norm               *float64
+	R4Norm               *float64
+	Q1NormPeriod         *float64
+	Q2NormPeriod         *float64
+	Q3NormPeriod         *float64
+	Q4NormPeriod         *float64
+	Q1HeatLossNormPeriod *float64
+	Q2HeatLossNormPeriod *float64
+	Q3HeatLossNormPeriod *float64
+	Q4HeatLossNormPeriod *float64
+	CalculationError     *string
 }

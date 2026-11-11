@@ -14,6 +14,7 @@ import (
 func militaryTownNetwork() domain.HeatNetwork {
 	return domain.HeatNetwork{ID: 2, Name: "Военный городок",
 		ProjectSupplyTemperature: number(80), ProjectReturnTemperature: number(50),
+		ProjectGroundTemperature:    number(5),
 		GVSProjectSupplyTemperature: number(60), GVSProjectCirculationTemperature: number(50)}
 }
 
@@ -164,8 +165,16 @@ func TestMilitaryTownJointSectionsDoNotProducePartialNetworkTotal(t *testing.T) 
 	joint := separate
 	id := int64(7)
 	joint.ID, joint.JointChannelID = 121, &id
+	joint.JointChannelHeightM = number(0.45)
+	joint.JointChannelWidthM = number(1.2)
+	joint.JointChannelCoverThicknessM = number(0.09)
+	joint.JointChannelGroundLambda = number(1.8)
+	heating := joint
+	heating.ID = 122
+	heating.NetworkType = "HEATING"
+	heating.BurialDepthM = number(1.2)
 	stub := &repositoryStub{network: militaryTownNetwork(), section: joint,
-		sections: []domain.NetworkSection{separate, joint}, values: separateValues()}
+		sections: []domain.NetworkSection{separate, joint, heating}, values: separateValues()}
 	service := New(stub)
 	rows, err := service.ListNetworkSections(context.Background(), 2)
 	if err != nil {

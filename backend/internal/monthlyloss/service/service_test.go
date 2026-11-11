@@ -21,9 +21,12 @@ func (stub *repositoryStub) ListInputsForMonth(
 }
 
 type normalizedHeatLossProviderStub struct {
-	total             float64
-	unavailableReason *string
-	requests          int
+	total                    float64
+	unavailableReason        *string
+	requests                 int
+	monthlyTotal             float64
+	monthlyUnavailableReason *string
+	monthlyRequests          int
 }
 
 func (stub *normalizedHeatLossProviderStub) TotalNormalizedHeatLossPerHour(
@@ -32,6 +35,15 @@ func (stub *normalizedHeatLossProviderStub) TotalNormalizedHeatLossPerHour(
 ) (float64, *string, error) {
 	stub.requests++
 	return stub.total, stub.unavailableReason, nil
+}
+
+func (stub *normalizedHeatLossProviderStub) TotalHeatLossForMonth(
+	_ context.Context,
+	_ int64,
+	_ time.Time,
+) (float64, *string, error) {
+	stub.monthlyRequests++
+	return stub.monthlyTotal, stub.monthlyUnavailableReason, nil
 }
 
 func TestListForMonthCalculatesLossByFormula(t *testing.T) {
@@ -84,7 +96,7 @@ func TestListForMonthKeepsNetworkWithMissingTemperatures(t *testing.T) {
 
 	month := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
 	repository := &repositoryStub{inputs: []domain.CalculationInput{{
-		HeatNetworkID:   2,
+		HeatNetworkID:   3,
 		HeatNetworkName: "Без показаний",
 		Month:           month,
 	}}}
@@ -105,6 +117,33 @@ func TestListForMonthKeepsNetworkWithMissingTemperatures(t *testing.T) {
 	}
 	if provider.requests != 0 {
 		t.Errorf("normalized heat loss requests = %d, want 0", provider.requests)
+	}
+}
+
+func TestMilitaryTownUsesSectionAndJointMonthlyTotal(t *testing.T) {
+	t.Parallel()
+
+	month := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	repository := &repositoryStub{inputs: []domain.CalculationInput{{
+		HeatNetworkID:   2,
+		HeatNetworkName: "Военный городок",
+		Month:           month,
+	}}}
+	provider := &normalizedHeatLossProviderStub{monthlyTotal: 42.5}
+
+	rows, err := New(repository, provider).ListForMonth(context.Background(), month)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].LossGJ == nil || *rows[0].LossGJ != 42.5 {
+		t.Fatalf("rows = %#v, want monthly loss 42.5 GJ", rows)
+	}
+	if provider.monthlyRequests != 1 || provider.requests != 0 {
+		t.Fatalf(
+			"monthly requests = %d, hourly requests = %d; want 1 and 0",
+			provider.monthlyRequests,
+			provider.requests,
+		)
 	}
 }
 
